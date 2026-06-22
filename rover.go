@@ -1,14 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/chromedp/chromedp"
 	"github.com/gen2brain/beeep"
 )
 
@@ -68,6 +71,7 @@ func (r *Rover) watchConfig() {
 				r.cfgMutex.Lock()
 				r.cfg = newCfg
 				r.cfgMutex.Unlock()
+				r.checkBrowserTestURLsChanged()
 				logInfo("🔄 偵測到設定檔變更，已自動重新載入")
 			} else {
 				logError("載入新設定檔失敗: %v", err)
@@ -83,11 +87,25 @@ func (r *Rover) pickRandomURL() string {
 	return r.GetConfig().TestURLs[rand.Intn(len(r.GetConfig().TestURLs))]
 }
 
+func (r *Rover) checkBrowserTestURLsChanged() {
+	currentURLs := strings.Join(r.GetConfig().BrowserTestURLs, ",")
+	lastURLs, _ := r.db.GetMetadata("browser_test_urls")
+	
+	if lastURLs != "" && lastURLs != currentURLs {
+		logWarning("偵測到 browser_test_urls 發生變更，已清空舊有網頁測試紀錄")
+		r.db.ClearBrowserLogs()
+	}
+	r.db.SetMetadata("browser_test_urls", currentURLs)
+}
+
 func (r *Rover) Start() {
 	logHeader("Clash Node Rover 啟動")
 
 	// 啟動設定檔監控
 	go r.watchConfig()
+
+	// 檢查網頁測試目標是否變更
+	r.checkBrowserTestURLsChanged()
 
 	// 啟動時先執行一次資料庫瘦身
 	if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
@@ -473,6 +491,47 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			logSuccess("頻寬測試完成: %s 下載達 %s MB/s (共消耗 %s MB)", formatNode(bwTestCandidate), formatVal(fmt.Sprintf("%.2f", mbps)), formatVal(fmt.Sprintf("%.1f", consumedMB)))
 			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("📈 測速：下載達 %s MB/s%s", formatVal(fmt.Sprintf("%.2f", mbps)), tag))
 			r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
+		}
+
+		// ----------------------------------------------------
+		// 無頭瀏覽器網頁開啟測試
+		// ----------------------------------------------------
+		if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
+			logInfo("開始使用無頭瀏覽器測試網頁連通性: %s (共 %d 個目標)...", formatNode(bwTestCandidate), len(r.GetConfig().BrowserTestURLs))
+			
+			for _, targetURL := range r.GetConfig().BrowserTestURLs {
+				// 設定 Chromedp 的 Proxy 參數
+				opts := append(chromedp.DefaultExecAllocatorOptions[:],
+					chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
+				)
+				
+				allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+				ctx, cancelCtx := chromedp.NewContext(allocCtx)
+				
+				// 設定超時
+				ctx, cancelTimeout := context.WithTimeout(ctx, 15*time.Second)
+				
+				startTime := time.Now()
+				err := chromedp.Run(ctx,
+					chromedp.Navigate(targetURL),
+					chromedp.WaitReady("body", chromedp.ByQuery),
+				)
+				loadTimeMs := int(time.Since(startTime).Milliseconds())
+				
+				cancelTimeout()
+				cancelCtx()
+				cancelAlloc()
+				
+				if err != nil {
+					logWarning("網頁開啟失敗: %s (目標: %s, 錯誤: %v)", formatNode(bwTestCandidate), targetURL, err)
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 網頁：開啟 %s 失敗", targetURL))
+					r.db.InsertBrowserLog(bwTestCandidate, targetURL, false, loadTimeMs)
+				} else {
+					logSuccess("網頁成功開啟: %s (目標: %s, 耗時 %d ms)", formatNode(bwTestCandidate), targetURL, loadTimeMs)
+					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 網頁：成功開啟 %s (耗時 %d ms)", targetURL, loadTimeMs))
+					r.db.InsertBrowserLog(bwTestCandidate, targetURL, true, loadTimeMs)
+				}
+			}
 		}
 
 		// 切回原本的冠軍節點

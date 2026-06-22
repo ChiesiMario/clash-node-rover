@@ -41,6 +41,9 @@ type Config struct {
 	FailoverInterval       int           `yaml:"failover_interval"` // seconds
 	FailoverMaxFails       int           `yaml:"failover_max_fails"`
 
+	EnableBrowserTest      bool          `yaml:"enable_browser_test"`
+	BrowserTestURLs        []string      `yaml:"browser_test_urls"`
+
 	Notifications          NotificationConfig `yaml:"notifications"`
 }
 
@@ -115,6 +118,14 @@ failover_interval: 3
 
 # 秒級急救機制的連續失敗次數門檻 (達到此數字才觸發急救，防止網路瞬斷誤判)
 failover_max_fails: 2
+
+# 是否啟用無頭瀏覽器網頁測試 (在下載測速後實際開啟網頁測試連通性)
+enable_browser_test: true
+
+# 無頭瀏覽器測試的目標網址清單 (預設為 Google 與 YouTube)
+browser_test_urls:
+  - "https://www.google.com"
+  - "https://www.youtube.com"
 
 # 原生桌面通知設定
 notifications:
@@ -247,6 +258,13 @@ func loadConfig() (*Config, error) {
 		// We'll leave it as is, or we can check a string pointer if we wanted. Let's not overwrite if they explicitly put false.
 	}
 
+	// Browser test defaults
+	if len(cfg.BrowserTestURLs) == 0 {
+		cfg.BrowserTestURLs = []string{"https://www.google.com", "https://www.youtube.com"}
+		// 如果原本沒設定 BrowserTestURLs，代表是舊版升級，預設開啟測試
+		cfg.EnableBrowserTest = true
+	}
+
 	return &cfg, nil
 }
 
@@ -296,6 +314,8 @@ func promptForConfig() (*Config, error) {
 		EnableFailover:         true,
 		FailoverInterval:       3,
 		FailoverMaxFails:       2,
+		EnableBrowserTest:      true,
+		BrowserTestURLs:        []string{"https://www.google.com", "https://www.youtube.com"},
 		Notifications: NotificationConfig{
 			Enable:             true,
 			NotifyOnFailover:   true,

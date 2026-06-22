@@ -568,10 +568,12 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                                 <th>Jitter</th>
                                 <th>Avg Speed</th>
                                 <th>Data Used</th>
+                                <th>Web Success</th>
+                                <th>Web Load</th>
                             </tr>
                         </thead>
                         <tbody id="tbody">
-                            <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
+                            <tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -639,7 +641,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const tbody = document.getElementById('tbody');
                 
                 if (!data || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">目前沒有節點數據</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:40px;">目前沒有節點數據</td></tr>';
                     return;
                 }
 
@@ -680,6 +682,16 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                         jitterColor = 'var(--warning)';
                     }
 
+                    const webSuccessColor = node.BrowserSuccessRate >= 0.9 ? 'var(--success)' : (node.BrowserSuccessRate >= 0.5 ? 'var(--warning)' : 'var(--danger)');
+                    let webSuccessStr = '<span style="color:var(--text-muted)">-</span>';
+                    let webLoadStr = '<span style="color:var(--text-muted)">-</span>';
+                    if (node.AvgBrowserLoadTime > 0 || node.BrowserSuccessRate > 0) {
+                        webSuccessStr = '<span style="color: ' + webSuccessColor + ';">' + (node.BrowserSuccessRate * 100).toFixed(0) + '%</span>';
+                        if (node.AvgBrowserLoadTime > 0) {
+                            webLoadStr = (node.AvgBrowserLoadTime / 1000).toFixed(2) + ' s';
+                        }
+                    }
+
                     tr.innerHTML = '<td class="rank ' + rankClass + '">#' + (index + 1) + '</td>' +
                         '<td style="font-weight: 600; color: #fff;">' + node.Name + providerTag + '</td>' +
                         '<td><span class="score-badge">' + node.Score + '</span></td>' +
@@ -687,7 +699,9 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                         '<td style="font-family: \'Outfit\', sans-serif;">' + node.AvgDelay.toFixed(0) + ' ms</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600; color: ' + jitterColor + ';">' + node.Jitter + ' ms</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif; font-weight: 500;">' + speedStr + '</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif;">' + consumedStr + '</td>';
+                        '<td style="font-family: \'Outfit\', sans-serif;">' + consumedStr + '</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600;">' + webSuccessStr + '</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif;">' + webLoadStr + '</td>';
                 });
             } catch (err) {}
         }
@@ -716,7 +730,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             chartRow = document.createElement('tr');
             chartRow.id = 'chart-row-' + index;
             chartRow.className = 'chart-row expanded-row';
-            chartRow.innerHTML = '<td colspan="8"><div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></td>';
+            chartRow.innerHTML = '<td colspan="10"><div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></td>';
             tr.parentNode.insertBefore(chartRow, tr.nextSibling);
 
             try {
@@ -724,7 +738,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const history = await res.json();
                 
                 if (!history || history.length === 0) {
-                    chartRow.innerHTML = '<td colspan="8" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
+                    chartRow.innerHTML = '<td colspan="10" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
                     return;
                 }
 
@@ -786,7 +800,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     }
                 });
             } catch (err) {
-                chartRow.innerHTML = '<td colspan="8" style="text-align:center; color: var(--danger);">載入圖表失敗</td>';
+                chartRow.innerHTML = '<td colspan="10" style="text-align:center; color: var(--danger);">載入圖表失敗</td>';
             }
         }
 

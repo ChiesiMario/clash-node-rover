@@ -68,3 +68,10 @@ failover_interval: 3
 # 秒級急救機制的連續失敗次數門檻 (達到此數字才觸發急救，防止網路瞬斷誤判)
 failover_max_fails: 2
 
+# 是否啟用無頭瀏覽器網頁測試 (在下載測速後實際開啟網頁測試連通性)
+enable_browser_test: true
+
+# 無頭瀏覽器測試的目標網址清單 (預設為 Google 與 YouTube)
+browser_test_urls:
+  - "https://www.google.com"
+  - "https://www.youtube.com"

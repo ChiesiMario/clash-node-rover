@@ -33,6 +33,18 @@ func InitDB() (*DB, error) {
 		speed_kbps REAL,
 		downloaded_bytes INTEGER
 	);
+	CREATE TABLE IF NOT EXISTS browser_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		node_name TEXT,
+		timestamp INTEGER,
+		url TEXT,
+		success BOOLEAN,
+		load_time_ms INTEGER
+	);
+	CREATE TABLE IF NOT EXISTS metadata (
+		key TEXT PRIMARY KEY,
+		value TEXT
+	);
 	CREATE INDEX IF NOT EXISTS idx_node_time ON ping_logs(node_name, timestamp);
 	`
 
@@ -58,6 +70,31 @@ func (d *DB) InsertBandwidthLog(nodeName string, speedKbps float64, downloadedBy
 	return err
 }
 
+func (d *DB) InsertBrowserLog(nodeName string, url string, success bool, loadTimeMs int) error {
+	query := `INSERT INTO browser_logs (node_name, timestamp, url, success, load_time_ms) VALUES (?, ?, ?, ?, ?)`
+	_, err := d.sqlDB.Exec(query, nodeName, time.Now().Unix(), url, success, loadTimeMs)
+	return err
+}
+
+func (d *DB) ClearBrowserLogs() error {
+	_, err := d.sqlDB.Exec(`DELETE FROM browser_logs`)
+	return err
+}
+
+func (d *DB) GetMetadata(key string) (string, error) {
+	var value string
+	err := d.sqlDB.QueryRow(`SELECT value FROM metadata WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+func (d *DB) SetMetadata(key string, value string) error {
+	_, err := d.sqlDB.Exec(`INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?`, key, value, value)
+	return err
+}
+
 func (d *DB) CleanOldLogs(days int) error {
 	cutoff := time.Now().AddDate(0, 0, -days).Unix()
 	
@@ -69,6 +106,12 @@ func (d *DB) CleanOldLogs(days int) error {
 
 	query2 := `DELETE FROM bandwidth_logs WHERE timestamp < ?`
 	_, err = d.sqlDB.Exec(query2, cutoff)
+	if err != nil {
+		return err
+	}
+
+	query3 := `DELETE FROM browser_logs WHERE timestamp < ?`
+	_, err = d.sqlDB.Exec(query3, cutoff)
 	return err
 }
 
@@ -81,6 +124,8 @@ type NodeScore struct {
 	Jitter             int
 	AvgBandwidth       float64
 	TotalConsumedBytes int64
+	BrowserSuccessRate float64
+	AvgBrowserLoadTime float64
 }
 
 func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
@@ -177,6 +222,43 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 		}
 	}
 
+	// 取得瀏覽器測試結果
+	brQuery := `
+		SELECT node_name, AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END), AVG(CASE WHEN success THEN load_time_ms ELSE NULL END)
+		FROM browser_logs 
+		WHERE timestamp >= ? 
+		GROUP BY node_name
+	`
+	brRows, err := d.sqlDB.Query(brQuery, cutoff)
+	if err == nil {
+		defer brRows.Close()
+		for brRows.Next() {
+			var name string
+			var successRate sql.NullFloat64
+			var avgLoad sql.NullFloat64
+			if err := brRows.Scan(&name, &successRate, &avgLoad); err == nil {
+				if sc, exists := scores[name]; exists {
+					if successRate.Valid {
+						sc.BrowserSuccessRate = successRate.Float64
+						// 成功率太低則扣分
+						if successRate.Float64 < 0.5 {
+							sc.Score -= 1000
+						}
+					}
+					if avgLoad.Valid {
+						sc.AvgBrowserLoadTime = avgLoad.Float64
+						// 載入時間加分：越快分數越高。基準為 5 秒(5000ms)，每快 100ms 加 10 分
+						bonus := int(5000 - avgLoad.Float64) / 10
+						if bonus > 0 {
+							sc.Score += bonus
+						}
+					}
+					scores[name] = sc
+				}
+			}
+		}
+	}
+
 	return scores, nil
 }
 
@@ -222,6 +304,11 @@ func (d *DB) Cleanup(days int) error {
 	
 	// Delete old bandwidth logs
 	if _, err := d.sqlDB.Exec("DELETE FROM bandwidth_logs WHERE timestamp < ?", cutoff); err != nil {
+		return err
+	}
+	
+	// Delete old browser logs
+	if _, err := d.sqlDB.Exec("DELETE FROM browser_logs WHERE timestamp < ?", cutoff); err != nil {
 		return err
 	}
 	

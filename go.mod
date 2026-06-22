@@ -9,6 +9,9 @@ require (
 
 require (
 	git.sr.ht/~jackmordaunt/go-toast v1.1.2 // indirect
+	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
+	github.com/chromedp/chromedp v0.15.1 // indirect
+	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/esiqveland/notify v0.13.3 // indirect
 	github.com/fatih/color v1.19.0 // indirect
@@ -20,8 +23,12 @@ require (
 	github.com/getlantern/hidden v0.0.0-20190325191715-f02dbb02be55 // indirect
 	github.com/getlantern/ops v0.0.0-20190325191751-d70cb0d6f85f // indirect
 	github.com/getlantern/systray v1.2.2 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-stack/stack v1.8.0 // indirect
+	github.com/gobwas/httphead v0.1.0 // indirect
+	github.com/gobwas/pool v0.2.1 // indirect
+	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect

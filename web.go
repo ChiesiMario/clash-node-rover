@@ -513,11 +513,19 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     const rankClass = index < 3 ? 'rank-' + (index+1) : '';
                     let providerTag = node.provider ? '<br><span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; display:inline-block; margin-top:4px;">🏢 ' + node.provider + '</span>' : '';
 
+                    let jitterColor = '#94a3b8'; // text-muted
+                    if (node.Jitter > 300) {
+                        jitterColor = 'var(--danger)';
+                    } else if (node.Jitter > 100) {
+                        jitterColor = 'var(--warning)';
+                    }
+
                     tr.innerHTML = '<td class="rank ' + rankClass + '">#' + (index + 1) + '</td>' +
                         '<td style="font-weight: 600; color: #fff;">' + node.Name + providerTag + '</td>' +
                         '<td><span class="score-badge">' + node.Score + '</span></td>' +
                         '<td class="success-rate" style="color: ' + successColor + ';">' + (node.SuccessRate * 100).toFixed(1) + '%</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif;">' + node.AvgDelay.toFixed(0) + ' ms</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600; color: ' + jitterColor + ';">' + node.Jitter + ' ms</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif; font-weight: 500;">' + speedStr + '</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif;">' + consumedStr + '</td>';
                 });

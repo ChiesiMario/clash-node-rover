@@ -45,13 +45,13 @@ web_port: 9091
 clash_proxy_url: "http://127.0.0.1:7891"
 
 # 真實頻寬測速用的下載檔案網址 (建議使用測速專用檔案)
-bandwidth_test_url: "https://speed.cloudflare.com/__down?bytes=1048576000"
+bandwidth_test_url: "https://speed.cloudflare.com/__down?bytes=52428800"
 
 # 真實頻寬測速的及格線 (KB/s)。低於此速度的節點會受到品質分數懲罰
 bandwidth_threshold_kbps: 500
 
 # 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
-bandwidth_test_interval: 30
+bandwidth_test_interval: 60
 
 # 潛力節點面試 (探索) 的獨立冷卻時間 (分鐘)。
 # 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點

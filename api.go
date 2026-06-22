@@ -151,7 +151,7 @@ func (api *APIClient) TestBandwidth(testURL string, proxyURL string, timeout tim
 	if err != nil {
 		return 0, 0, err
 	}
-	req.Header.Set("User-Agent", "ClashNodeRover/1.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	startTime := time.Now()
 	resp, err := client.Do(req)

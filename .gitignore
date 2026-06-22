@@ -13,3 +13,7 @@ go.work
 
 # Configuration files
 rover_config.json
+rover_config.yaml.bak
+*.bak
+rover.log
+rover.db

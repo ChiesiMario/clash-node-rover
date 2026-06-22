@@ -17,13 +17,13 @@ target_groups:
 # 專屬的無感測速群組 (Optional，留空則自動借用上述的 target_groups)。
 # 如果設定此群組，Rover 測速時將不再借用你正在上網的群組，達成 100% 無感背景測速。
 # (強烈建議：需配合 Clash 設定檔開啟獨立 Port 並將 clash_proxy_url 改為該 Port)
-dedicated_test_group: ""
+dedicated_test_group: "⚡️ Node Rover (SpeedTest)"
 
 # 用來進行 Ping 測試的目標網址列表，會隨機抽取一個進行測試
 test_urls:
-  - "https://www.gstatic.com/generate_204"
-  - "https://cp.cloudflare.com/generate_204"
-  - "https://www.apple.com/library/test/success.html"
+  - "https://www.google.com"
+  - "https://github.com"
+  - "https://cloudflare.com"
 
 # Ping 測試的超時時間
 test_timeout: 5s

@@ -214,6 +214,7 @@ func (r *Rover) runCheckCycle() {
 
 	// 3. 為每個群組獨立計算最佳節點
 	groupTargetNodes := make(map[string]string)
+	pendingSwitches := make(map[string]string)
 
 	for _, groupName := range r.cfg.TargetGroups {
 		nodes, ok := groupNodesMap[groupName]
@@ -270,12 +271,8 @@ func (r *Rover) runCheckCycle() {
 		groupTargetNodes[groupName] = targetNode
 
 		if targetNode != groupNowMap[groupName] && groupNowMap[groupName] != "" {
-			log.Printf("[%s] 從 [%s] 切換至更好的節點 [%s]", groupName, groupNowMap[groupName], targetNode)
-			if err := r.api.SelectProxy(groupName, targetNode); err != nil {
-				log.Printf("[%s] 切換代理節點失敗: %v", groupName, err)
-			} else {
-				log.Printf("[%s] 成功切換代理節點。", groupName)
-			}
+			log.Printf("[%s] 預計從 [%s] 切換至更好的節點 [%s] (將於測速結束後執行)", groupName, groupNowMap[groupName], targetNode)
+			pendingSwitches[groupName] = targetNode
 		} else {
 			log.Printf("[%s] 目前的節點 [%s] 依然是最佳選擇。", groupName, targetNode)
 		}
@@ -343,7 +340,8 @@ func (r *Rover) runCheckCycle() {
 		} else {
 			// 如果沒有設定專屬群組，就借用目前正在處理的這個群組
 			borrowGroup = groupName
-			originalTarget = targetNode
+			// 借用完畢後，切回原本「測速前」的節點，以防影響後續的流程
+			originalTarget = groupNowMap[groupName]
 		}
 
 		isExploration := (bwTestCandidate != originalTarget)
@@ -376,6 +374,18 @@ func (r *Rover) runCheckCycle() {
 		if isExploration && originalTarget != "" {
 			log.Printf("[%s] 探索測速完成，將群組 [%s] 切回節點 [%s]", groupName, borrowGroup, originalTarget)
 			r.api.SelectProxy(borrowGroup, originalTarget)
+		}
+	}
+
+	// 5. 統一執行所有主要群組的最終節點切換
+	if len(pendingSwitches) > 0 {
+		log.Println("所有測速皆已完成，開始執行主要群組的節點切換...")
+		for groupName, targetNode := range pendingSwitches {
+			if err := r.api.SelectProxy(groupName, targetNode); err != nil {
+				log.Printf("[%s] 切換代理節點失敗: %v", groupName, err)
+			} else {
+				log.Printf("[%s] 成功切換代理節點至 [%s]。", groupName, targetNode)
+			}
 		}
 	}
 }

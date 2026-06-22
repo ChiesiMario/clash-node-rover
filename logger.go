@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/fatih/color"
 )
@@ -22,23 +23,28 @@ var (
 
 func logHeader(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
-	log.Print(colorHeader.Sprintf("\n========== %s ==========", msg))
+	fmt.Fprintln(color.Output)
+	log.Print(colorHeader.Sprintf("========== %s ==========", msg))
 }
 
 func logInfo(format string, a ...interface{}) {
-	log.Print(colorInfo.Sprintf("ℹ "+format, a...))
+	msg := fmt.Sprintf(format, a...)
+	log.Print(colorInfo.Sprint("💡 ") + msg)
 }
 
 func logSuccess(format string, a ...interface{}) {
-	log.Print(colorSuccess.Sprintf("✔ "+format, a...))
+	msg := fmt.Sprintf(format, a...)
+	log.Print(colorSuccess.Sprint("✅ ") + msg)
 }
 
 func logWarning(format string, a ...interface{}) {
-	log.Print(colorWarning.Sprintf("⚠ "+format, a...))
+	msg := fmt.Sprintf(format, a...)
+	log.Print(colorWarning.Sprint("⚠️ ") + msg)
 }
 
 func logError(format string, a ...interface{}) {
-	log.Print(colorError.Sprintf("✖ "+format, a...))
+	msg := fmt.Sprintf(format, a...)
+	log.Print(colorError.Sprint("❌ ") + msg)
 }
 
 func logFailover(format string, a ...interface{}) {
@@ -62,4 +68,29 @@ func formatNode(name string) string {
 
 func formatVal(val interface{}) string {
 	return colorValue.Sprintf("%v", val)
+}
+
+func logReportStart() {
+	timeStr := time.Now().Format("15:04:05")
+	fmt.Fprintln(color.Output)
+	fmt.Fprintln(color.Output, colorHeader.Sprintf("========== 週期測速報告 (%s) ==========", timeStr))
+}
+
+func logReportEnd() {
+	fmt.Fprintln(color.Output, colorHeader.Sprint("======================================================="))
+	fmt.Fprintln(color.Output)
+}
+
+func logGroupTitle(group string) {
+	fmt.Fprintln(color.Output)
+	fmt.Fprintln(color.Output, colorGroup.Sprintf("[%s]", group))
+}
+
+func logTreeItem(isLast bool, format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	prefix := "  ├─ "
+	if isLast {
+		prefix = "  └─ "
+	}
+	fmt.Fprintln(color.Output, colorMuted.Sprint(prefix)+msg)
 }

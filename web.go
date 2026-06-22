@@ -430,12 +430,13 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                             <th>Score</th>
                             <th>Success</th>
                             <th>Avg Ping</th>
+                            <th>Jitter</th>
                             <th>Avg Speed</th>
                             <th>Data Used</th>
                         </tr>
                     </thead>
                     <tbody id="tbody">
-                        <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
+                        <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -547,7 +548,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             chartRow = document.createElement('tr');
             chartRow.id = 'chart-row-' + index;
             chartRow.className = 'chart-row expanded-row';
-            chartRow.innerHTML = '<td colspan="7"><div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></td>';
+            chartRow.innerHTML = '<td colspan="8"><div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></td>';
             tr.parentNode.insertBefore(chartRow, tr.nextSibling);
 
             try {
@@ -555,7 +556,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const history = await res.json();
                 
                 if (!history || history.length === 0) {
-                    chartRow.innerHTML = '<td colspan="7" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
+                    chartRow.innerHTML = '<td colspan="8" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
                     return;
                 }
 
@@ -617,7 +618,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     }
                 });
             } catch (err) {
-                chartRow.innerHTML = '<td colspan="7" style="text-align:center; color: var(--danger);">載入圖表失敗</td>';
+                chartRow.innerHTML = '<td colspan="8" style="text-align:center; color: var(--danger);">載入圖表失敗</td>';
             }
         }
 

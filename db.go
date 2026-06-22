@@ -78,6 +78,7 @@ type NodeScore struct {
 	BaseScore          int
 	SuccessRate        float64
 	AvgDelay           float64
+	Jitter             int
 	AvgBandwidth       float64
 	TotalConsumedBytes int64
 }
@@ -89,7 +90,8 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			p.node_name, 
 			COUNT(p.id) as total_tests,
 			SUM(CASE WHEN p.success THEN 1 ELSE 0 END) as success_tests,
-			AVG(CASE WHEN p.success THEN p.delay ELSE NULL END) as avg_delay
+			AVG(CASE WHEN p.success THEN p.delay ELSE NULL END) as avg_delay,
+			MAX(CASE WHEN p.success THEN p.delay ELSE NULL END) - MIN(CASE WHEN p.success THEN p.delay ELSE NULL END) as jitter
 		FROM ping_logs p
 		WHERE p.timestamp >= ?
 		GROUP BY p.node_name
@@ -107,8 +109,9 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 		var name string
 		var total, successCount int
 		var avgDelay sql.NullFloat64
+		var jitter sql.NullInt64
 
-		if err := rows.Scan(&name, &total, &successCount, &avgDelay); err != nil {
+		if err := rows.Scan(&name, &total, &successCount, &avgDelay, &jitter); err != nil {
 			log.Printf("掃描資料庫發生錯誤: %v", err)
 			continue
 		}
@@ -123,8 +126,13 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			delay = avgDelay.Float64
 		}
 
-		// 公式： (成功率 * 10000) - (平均延遲)
-		score := int(successRate*10000) - int(delay)
+		// 公式： (成功率 * 10000) - (平均延遲) - (Jitter * 2)
+		j := 0
+		if jitter.Valid {
+			j = int(jitter.Int64)
+		}
+		
+		score := int(successRate*10000) - int(delay) - (j * 2)
 
 		scores[name] = NodeScore{
 			Name:               name,
@@ -132,6 +140,7 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			BaseScore:          score,
 			SuccessRate:        successRate,
 			AvgDelay:           delay,
+			Jitter:             j,
 			AvgBandwidth:       0.0,
 			TotalConsumedBytes: 0,
 		}

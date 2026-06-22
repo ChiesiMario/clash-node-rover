@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"math/rand"
 	"sync"
@@ -46,13 +45,13 @@ func (r *Rover) pickRandomURL() string {
 }
 
 func (r *Rover) Start() {
-	log.Println("Clash Node Rover 啟動...")
+	logHeader("Clash Node Rover 啟動")
 
 	// 啟動時先執行一次資料庫瘦身
 	if err := r.db.Cleanup(r.cfg.CleanupDays); err != nil {
-		log.Printf("資料庫自動瘦身失敗: %v", err)
+		logError("資料庫自動瘦身失敗: %v", err)
 	} else {
-		log.Printf("資料庫自動瘦身完成 (保留 %d 天)", r.cfg.CleanupDays)
+		logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.cfg.CleanupDays))
 	}
 
 	r.runCheckCycle() // 啟動時先跑一次
@@ -70,17 +69,17 @@ func (r *Rover) Start() {
 			r.runCheckCycle()
 		case <-cleanupTicker.C:
 			if err := r.db.Cleanup(r.cfg.CleanupDays); err != nil {
-				log.Printf("資料庫自動瘦身失敗: %v", err)
+				logError("資料庫自動瘦身失敗: %v", err)
 			} else {
-				log.Printf("資料庫自動瘦身完成 (保留 %d 天)", r.cfg.CleanupDays)
+				logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.cfg.CleanupDays))
 			}
 		case <-r.ManualTrigger:
-			log.Println("收到手動測速信號，立即執行！")
+			logInfo("收到手動測速信號，立即執行！")
 			ticker.Stop()
 			r.runCheckCycle()
 			ticker.Reset(r.cfg.CheckInterval)
 		case <-r.Quit:
-			log.Println("背景測速引擎已停止。")
+			logWarning("背景測速引擎已停止。")
 			return
 		}
 	}
@@ -103,8 +102,7 @@ func (r *Rover) runCheckCycle() {
 	r.IsRunning = true
 	defer func() { r.IsRunning = false }()
 
-	log.Println("----------------------------------------")
-	log.Println("開始新一輪節點測試 (多群組並行模式)...")
+	logHeader("開始新一輪節點測試 (多群組並行模式)")
 
 	groupNodesMap := make(map[string][]string)
 	groupNowMap := make(map[string]string)
@@ -113,11 +111,11 @@ func (r *Rover) runCheckCycle() {
 	for _, groupName := range r.cfg.TargetGroups {
 		group, err := r.api.GetProxyGroup(groupName)
 		if err != nil {
-			log.Printf("取得代理群組 [%s] 時發生錯誤: %v", groupName, err)
+			logError("取得代理群組 [%s] 時發生錯誤: %v", groupName, err)
 			continue
 		}
 		if len(group.All) == 0 {
-			log.Printf("代理群組 [%s] 中沒有找到節點。", groupName)
+			logWarning("代理群組 [%s] 中沒有找到節點。", groupName)
 			continue
 		}
 		groupNodesMap[groupName] = group.All
@@ -128,7 +126,7 @@ func (r *Rover) runCheckCycle() {
 	}
 
 	if len(uniqueNodes) == 0 {
-		log.Println("所有目標群組中都沒有有效節點，退出本次檢查。")
+		logWarning("所有目標群組中都沒有有效節點，退出本次檢查。")
 		return
 	}
 
@@ -146,7 +144,7 @@ func (r *Rover) runCheckCycle() {
 
 			lastCheck := r.lastCheckTime[name]
 			if now.Sub(lastCheck) < time.Duration(backoffMins)*time.Minute {
-				log.Printf("節點 [%s] 處於退避期 (連續失敗 %d 次，退避 %d 分鐘)，跳過測速。", name, fails, backoffMins)
+				logMuted("節點 %s 處於退避期 (連續失敗 %d 次，退避 %d 分鐘)，跳過測速。", formatNode(name), fails, backoffMins)
 				continue
 			}
 		}
@@ -154,7 +152,7 @@ func (r *Rover) runCheckCycle() {
 	}
 
 	if len(nodesToTest) == 0 {
-		log.Println("所有節點都在退避期，本次跳過檢查。")
+		logWarning("所有節點都在退避期，本次跳過檢查。")
 		return
 	}
 
@@ -203,13 +201,13 @@ func (r *Rover) runCheckCycle() {
 		}
 
 		if err := r.db.InsertLog(s.Name, s.Delay, success); err != nil {
-			log.Printf("寫入日誌失敗 [%s]: %v", s.Name, err)
+			logError("寫入日誌失敗 %s: %v", formatNode(s.Name), err)
 		}
 	}
 
 	scores, err := r.db.GetScores(r.cfg.HistoryDays)
 	if err != nil {
-		log.Printf("取得歷史分數失敗: %v", err)
+		logError("取得歷史分數失敗: %v", err)
 	}
 
 	// 3. 為每個群組獨立計算最佳節點
@@ -249,32 +247,32 @@ func (r *Rover) runCheckCycle() {
 		}
 
 		if fastestNode == "" {
-			log.Printf("[%s] 所有參與測試的節點皆失敗，保留目前節點。", groupName)
+			logGroup(groupName, colorWarning.Sprintf("所有參與測試的節點皆失敗，保留目前節點。"))
 			groupTargetNodes[groupName] = groupNowMap[groupName]
 			continue
 		}
 
 		targetNode := fastestNode
-		reason := "當前速度最快"
+		reason := colorInfo.Sprint("當前速度最快")
 
 		if highestScoreNode != "" {
 			diff := highestScoreCurrentDelay - fastestDelay
 			if diff <= r.cfg.DelayTolerance {
 				targetNode = highestScoreNode
-				reason = fmt.Sprintf("最高質量分，且與最快節點差距僅 %d 毫秒", diff)
+				reason = colorSuccess.Sprintf("最高質量分，且與最快節點差距僅 %s 毫秒", formatVal(diff))
 			} else {
-				reason = fmt.Sprintf("最高質量分節點比最快節點慢太多 (差距 %d 毫秒)，強制使用最快節點", diff)
+				reason = colorWarning.Sprintf("最高分節點比最快節點慢 %s 毫秒，強制使用最快節點", formatVal(diff))
 			}
 		}
 
-		log.Printf("[%s] 選擇節點: [%s] | 理由: %s", groupName, targetNode, reason)
+		logGroup(groupName, "選擇節點: %s | 理由: %s", formatNode(targetNode), reason)
 		groupTargetNodes[groupName] = targetNode
 
 		if targetNode != groupNowMap[groupName] && groupNowMap[groupName] != "" {
-			log.Printf("[%s] 預計從 [%s] 切換至更好的節點 [%s] (將於測速結束後執行)", groupName, groupNowMap[groupName], targetNode)
+			logGroup(groupName, colorWarning.Sprintf("預計從 %s 切換至 %s (將於測速結束後執行)", formatNode(groupNowMap[groupName]), formatNode(targetNode)))
 			pendingSwitches[groupName] = targetNode
 		} else {
-			log.Printf("[%s] 目前的節點 [%s] 依然是最佳選擇。", groupName, targetNode)
+			logGroup(groupName, colorSuccess.Sprintf("目前的節點 %s 依然是最佳選擇。", formatNode(targetNode)))
 		}
 	}
 
@@ -318,12 +316,12 @@ func (r *Rover) runCheckCycle() {
 		}
 
 		if bwTestCandidate == "" {
-			log.Printf("[%s] 目前所有優質節點皆在頻寬測速冷卻期內，跳過下載測試以節省流量。", groupName)
+			logGroup(groupName, colorMuted.Sprintf("目前所有優質節點皆在頻寬測速冷卻期內，跳過下載測試以節省流量。"))
 			continue
 		}
 
 		if alreadyTestedInCycle[bwTestCandidate] {
-			log.Printf("[%s] 節點 [%s] 在本週期已經測速過，跳過重複測速。", groupName, bwTestCandidate)
+			logGroup(groupName, colorMuted.Sprintf("節點 %s 在本週期已經測速過，跳過重複測速。", formatNode(bwTestCandidate)))
 			continue
 		}
 
@@ -347,14 +345,14 @@ func (r *Rover) runCheckCycle() {
 		isExploration := (bwTestCandidate != originalTarget)
 
 		if isExploration {
-			log.Printf("[%s] 💡 觸發反壟斷探索機制：切換群組 [%s] 至潛力節點 [%s] 進行測速", groupName, borrowGroup, bwTestCandidate)
+			logGroup(groupName, colorInfo.Sprintf("💡 觸發反壟斷探索機制：切換群組 [%s] 至潛力節點 %s 進行測速", borrowGroup, formatNode(bwTestCandidate)))
 			err := r.api.SelectProxy(borrowGroup, bwTestCandidate)
 			if err != nil {
-				log.Printf("[%s] 無法切換至候選節點: %v", groupName, err)
+				logGroup(groupName, colorError.Sprintf("無法切換至候選節點: %v", err))
 				continue
 			}
 		} else {
-			log.Printf("[%s] 準備針對最佳節點 [%s] 進行真實頻寬測試...", groupName, bwTestCandidate)
+			logGroup(groupName, colorInfo.Sprintf("準備針對最佳節點 %s 進行真實頻寬測試...", formatNode(bwTestCandidate)))
 		}
 
 		r.lastBandwidthTest[bwTestCandidate] = time.Now()
@@ -363,28 +361,28 @@ func (r *Rover) runCheckCycle() {
 		speedKBps, totalBytes, err := r.api.TestBandwidth(r.cfg.BandwidthTestURL, r.cfg.ClashProxyURL, 15*time.Second)
 		
 		if err != nil {
-			log.Printf("[%s] 頻寬測試失敗: %v", groupName, err)
+			logGroup(groupName, colorError.Sprintf("頻寬測試失敗: %v", err))
 			r.db.InsertLog(bwTestCandidate, 9999, false)
 		} else {
-			log.Printf("[%s] 頻寬測試完成: %.2f KB/s", groupName, speedKBps)
+			logGroup(groupName, colorSuccess.Sprintf("頻寬測試完成: %s KB/s", formatVal(fmt.Sprintf("%.2f", speedKBps))))
 			r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
 		}
 
 		// 切回原本的冠軍節點
 		if isExploration && originalTarget != "" {
-			log.Printf("[%s] 探索測速完成，將群組 [%s] 切回節點 [%s]", groupName, borrowGroup, originalTarget)
+			logGroup(groupName, colorMuted.Sprintf("探索測速完成，將群組 [%s] 切回節點 %s", borrowGroup, formatNode(originalTarget)))
 			r.api.SelectProxy(borrowGroup, originalTarget)
 		}
 	}
 
 	// 5. 統一執行所有主要群組的最終節點切換
 	if len(pendingSwitches) > 0 {
-		log.Println("所有測速皆已完成，開始執行主要群組的節點切換...")
+		logHeader("執行主要群組節點切換")
 		for groupName, targetNode := range pendingSwitches {
 			if err := r.api.SelectProxy(groupName, targetNode); err != nil {
-				log.Printf("[%s] 切換代理節點失敗: %v", groupName, err)
+				logGroup(groupName, colorError.Sprintf("切換代理節點失敗: %v", err))
 			} else {
-				log.Printf("[%s] 成功切換代理節點至 [%s]。", groupName, targetNode)
+				logGroup(groupName, colorSuccess.Sprintf("成功切換代理節點至 %s", formatNode(targetNode)))
 			}
 		}
 	}

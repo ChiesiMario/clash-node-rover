@@ -56,6 +56,10 @@ func (r *Rover) Start() {
 
 	r.runCheckCycle() // 啟動時先跑一次
 
+	if r.cfg.EnableFailover {
+		go r.runFailoverWatchdog()
+	}
+
 	ticker := time.NewTicker(r.cfg.CheckInterval)
 	defer ticker.Stop()
 
@@ -387,3 +391,84 @@ func (r *Rover) runCheckCycle() {
 		}
 	}
 }
+
+func (r *Rover) runFailoverWatchdog() {
+	logInfo("啟動秒級急救機制 Watchdog (偵測間隔: %s 秒)", formatVal(r.cfg.FailoverInterval))
+	ticker := time.NewTicker(time.Duration(r.cfg.FailoverInterval) * time.Second)
+	defer ticker.Stop()
+
+	consecutiveFails := make(map[string]int)
+
+	for {
+		select {
+		case <-r.Quit:
+			return
+		case <-ticker.C:
+			if r.IsRunning {
+				// 如果主測速引擎正在執行中，不要干擾
+				continue
+			}
+
+			// 針對每個群組檢查目前的節點
+			for _, groupName := range r.cfg.TargetGroups {
+				group, err := r.api.GetProxyGroup(groupName)
+				if err != nil || group.Now == "" {
+					continue
+				}
+
+				activeNode := group.Now
+				testUrl := r.pickRandomURL()
+				// 只等 3 秒的超時，要求快速回應
+				_, err = r.api.TestProxyDelay(activeNode, testUrl, 3*time.Second)
+				
+				if err != nil {
+					consecutiveFails[groupName]++
+					if consecutiveFails[groupName] == 1 {
+						logGroup(groupName, colorWarning.Sprintf("節點 %s 失去回應，進入黃色警戒...", formatNode(activeNode)))
+					}
+					
+					if consecutiveFails[groupName] >= r.cfg.FailoverMaxFails {
+						logFailover("[%s] 節點 %s 已癱瘓！觸發秒級急救！", groupName, activeNode)
+						
+						// 寫入懲罰
+						r.db.InsertLog(activeNode, 9999, false)
+						
+						// 找備胎
+						scores, _ := r.db.GetScores(r.cfg.HistoryDays)
+						var bestAlt string
+						var highestScore = -999999
+						
+						for _, candidate := range group.All {
+							if candidate == activeNode {
+								continue
+							}
+							if sc, ok := scores[candidate]; ok {
+								if sc.Score > highestScore {
+									highestScore = sc.Score
+									bestAlt = candidate
+								}
+							}
+						}
+						
+						if bestAlt != "" {
+							r.api.SelectProxy(groupName, bestAlt)
+							logFailover("[%s] 已強制切換至備用節點 %s", groupName, bestAlt)
+						} else {
+							logFailover("[%s] 找不到其他可用的備用節點！", groupName)
+						}
+						
+						// 重置計數
+						consecutiveFails[groupName] = 0
+					}
+				} else {
+					// 成功回應，重置計數
+					if consecutiveFails[groupName] > 0 {
+						logGroup(groupName, colorSuccess.Sprintf("節點 %s 恢復連線，解除黃色警戒。", formatNode(activeNode)))
+						consecutiveFails[groupName] = 0
+					}
+				}
+			}
+		}
+	}
+}
+

@@ -58,3 +58,13 @@ exploration_cooldown_minutes: 60
 
 # 發生連線錯誤時的退避冷卻上限 (分鐘)。失敗越多次，冷卻越久，最高不超過此數值
 max_backoff_minutes: 30
+
+# 是否啟用秒級急救機制 (當前使用節點斷線時，秒級切換至備用節點)
+enable_failover: true
+
+# 秒級急救機制的偵測間隔 (秒)
+failover_interval: 3
+
+# 秒級急救機制的連續失敗次數門檻 (達到此數字才觸發急救，防止網路瞬斷誤判)
+failover_max_fails: 2
+

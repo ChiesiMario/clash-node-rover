@@ -13,6 +13,7 @@ var (
 	colorSuccess = color.New(color.FgHiGreen, color.Bold)
 	colorWarning = color.New(color.FgHiYellow)
 	colorError   = color.New(color.FgHiRed, color.Bold)
+	colorFailover= color.New(color.BgRed, color.FgHiWhite, color.Bold)
 	colorMuted   = color.New(color.FgHiBlack)
 	colorGroup   = color.New(color.FgHiBlue, color.Bold)
 	colorNode    = color.New(color.FgHiWhite, color.Bold)
@@ -38,6 +39,11 @@ func logWarning(format string, a ...interface{}) {
 
 func logError(format string, a ...interface{}) {
 	log.Print(colorError.Sprintf("✖ "+format, a...))
+}
+
+func logFailover(format string, a ...interface{}) {
+	msg := fmt.Sprintf(format, a...)
+	log.Print(colorFailover.Sprintf(" 🚨 急救機制 ") + " " + colorError.Sprintf(msg))
 }
 
 func logMuted(format string, a ...interface{}) {

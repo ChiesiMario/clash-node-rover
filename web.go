@@ -10,8 +10,25 @@ import (
 func StartWebServer(db *DB, rover *Rover, port int) {
 	http.HandleFunc("/", handleIndex)
 
+	http.HandleFunc("/api/groups", func(w http.ResponseWriter, r *http.Request) {
+		type GroupStatus struct {
+			Name string `json:"name"`
+			Now  string `json:"now"`
+			All  int    `json:"all_count"`
+		}
+		var statuses []GroupStatus
+		for _, gName := range rover.cfg.TargetGroups {
+			g, err := rover.api.GetProxyGroup(gName)
+			if err == nil {
+				statuses = append(statuses, GroupStatus{Name: gName, Now: g.Now, All: len(g.All)})
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(statuses)
+	})
+
 	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
-		scores, err := db.GetScores(7)
+		scores, err := db.GetScores(rover.cfg.HistoryDays)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -57,7 +74,6 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 			return
 		}
 
-		// 嘗試非阻塞寫入 channel
 		select {
 		case rover.ManualTrigger <- struct{}{}:
 		default:
@@ -79,83 +95,319 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Clash Node Rover</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --bg-dark: #0f172a;
-            --panel-bg: rgba(30, 41, 59, 0.7);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
+            --bg-base: #030712;
+            --bg-panel: rgba(17, 24, 39, 0.7);
+            --bg-panel-hover: rgba(31, 41, 55, 0.8);
+            --border-light: rgba(255, 255, 255, 0.08);
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
             --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.5);
+            --accent: #8b5cf6;
             --success: #10b981;
+            --success-bg: rgba(16, 185, 129, 0.15);
             --warning: #f59e0b;
             --danger: #ef4444;
         }
+        
         body {
-            background-color: var(--bg-dark);
+            background-color: var(--bg-base);
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(59, 130, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 85% 30%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
             color: var(--text-main);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Inter', sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 30px 20px;
+            min-height: 100vh;
         }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .glass-panel {
-            background: var(--panel-bg);
-            backdrop-filter: blur(10px);
+
+        .container {
+            max-width: 1280px;
+            margin: 0 auto;
+        }
+
+        h1, h2, h3 {
+            font-family: 'Outfit', sans-serif;
+            margin: 0;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .logo {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #60a5fa, #c084fc);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -1px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: white;
+            border: none;
+            padding: 12px 24px;
             border-radius: 12px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px var(--primary-glow);
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(139, 92, 246, 0.6);
+        }
+
+        .btn:disabled {
+            background: #374151;
+            box-shadow: none;
+            cursor: not-allowed;
+            color: #9ca3af;
+        }
+
+        /* Group Cards */
+        .groups-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .glass-panel {
+            background: var(--bg-panel);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
             padding: 24px;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, border-color 0.3s ease;
         }
-        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
-        th { text-align: left; padding: 12px; border-bottom: 2px solid rgba(255,255,255,0.1); }
-        td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        tr:hover { background: rgba(255,255,255,0.05); cursor: pointer; }
+
+        .group-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.2);
+            background: var(--bg-panel-hover);
+        }
+
+        .group-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 1rem;
+        }
+
+        .group-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #e5e7eb;
+        }
+
+        .node-now {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 0.5rem;
+            word-break: break-all;
+        }
+
+        .node-meta {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--success);
+            box-shadow: 0 0 10px var(--success);
+            display: inline-block;
+        }
+
+        /* Leaderboard */
+        .leaderboard {
+            margin-top: 2rem;
+        }
+
+        .leaderboard-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .leaderboard-title {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 0.5rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            text-align: left;
+        }
+
+        th {
+            padding: 16px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        td {
+            padding: 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+
+        tr.node-row:hover td {
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+        }
+
+        tr.expanded-row td {
+            background: rgba(0, 0, 0, 0.3) !important;
+        }
+
+        .rank {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 800;
+            font-size: 1.1rem;
+            color: var(--text-muted);
+        }
+
+        .rank-1 { color: #fbbf24; text-shadow: 0 0 10px rgba(251, 191, 36, 0.3); }
+        .rank-2 { color: #94a3b8; }
+        .rank-3 { color: #b45309; }
+
         .score-badge {
-            background: rgba(59, 130, 246, 0.2);
-            color: var(--primary);
-            padding: 4px 12px;
-            border-radius: 999px;
-            font-weight: bold;
+            background: rgba(139, 92, 246, 0.15);
+            color: #c084fc;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1rem;
+            border: 1px solid rgba(139, 92, 246, 0.3);
         }
+
+        .success-rate {
+            font-weight: 600;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 350px;
+            padding: 20px;
+            box-sizing: border-box;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            margin: 10px 0;
+        }
+
         @keyframes spin { 100% { transform: rotate(360deg); } }
-        .chart-container { width: 100%; height: 300px; padding: 15px; box-sizing: border-box; }
-        .expanded-row { background: rgba(0,0,0,0.2) !important; }
+        
+        .spin-icon {
+            display: inline-block;
+            animation: spin 2s linear infinite;
+        }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="container">
-        <h1>🤖 NODE ROVER</h1>
-        <div class="glass-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <div>
-                    <h2>質量分數排行榜</h2>
-                    <div style="color: var(--text-muted);">點擊節點可查看 24 小時歷史延遲圖表。</div>
-                </div>
-                <button id="triggerBtn" onclick="triggerTest()" style="background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: bold; display: flex; align-items: center; gap: 8px;">
-                    <span id="triggerIcon">🚀</span> <span id="triggerText">立即全局測速</span>
-                </button>
+        <div class="header">
+            <div class="logo">NODE ROVER</div>
+            <button id="triggerBtn" class="btn" onclick="triggerTest()">
+                <span id="triggerIcon">🚀</span> <span id="triggerText">立即測速</span>
+            </button>
+        </div>
+
+        <div id="groupsGrid" class="groups-grid">
+            <!-- Group Cards Injected Here -->
+        </div>
+
+        <div class="glass-panel leaderboard">
+            <div class="leaderboard-header">
+                <h2 class="leaderboard-title">節點質量排行榜</h2>
+                <div style="color: var(--text-muted);">全球節點綜合評分。點擊節點可展開 24 小時延遲趨勢圖。</div>
             </div>
-            <table id="statsTable">
-                <thead>
-                    <tr>
-                        <th>排名</th>
-                        <th>節點名稱</th>
-                        <th>質量分數</th>
-                        <th>成功率</th>
-                        <th>平均延遲 (MS)</th>
-                        <th>平均下載速度</th>
-                        <th>累計流量</th>
-                    </tr>
-                </thead>
-                <tbody id="tbody">
-                    <tr><td colspan="7" style="text-align:center;color:var(--text-muted);">載入中...</td></tr>
-                </tbody>
-            </table>
+            
+            <div style="overflow-x: auto;">
+                <table id="statsTable">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Node Name</th>
+                            <th>Score</th>
+                            <th>Success</th>
+                            <th>Avg Ping</th>
+                            <th>Avg Speed</th>
+                            <th>Data Used</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbody">
+                        <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
+
     <script>
         let chartInstances = {};
+
+        async function fetchGroups() {
+            try {
+                const res = await fetch('/api/groups');
+                const data = await res.json();
+                const grid = document.getElementById('groupsGrid');
+                
+                if (!data || data.length === 0) return;
+
+                let html = '';
+                data.forEach(g => {
+                    html += '<div class="glass-panel group-card">' +
+                            '<div class="group-header">' +
+                                '<h3 class="group-title">' + g.name + '</h3>' +
+                            '</div>' +
+                            '<div class="node-now">' + (g.now || '未選擇') + '</div>' +
+                            '<div class="node-meta">' +
+                                '<div class="status-dot"></div>' +
+                                '<span>當前運行中 &bull; 總計 ' + g.all_count + ' 個節點</span>' +
+                            '</div>' +
+                        '</div>';
+                });
+                grid.innerHTML = html;
+            } catch(err) {}
+        }
 
         async function fetchStats() {
             try {
@@ -164,11 +416,11 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const tbody = document.getElementById('tbody');
                 
                 if (!data || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">目前還沒有足夠的測速資料...</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">目前沒有節點數據</td></tr>';
                     return;
                 }
 
-                if (tbody.children.length === 1 && tbody.children[0].textContent.includes('載入中')) {
+                if (tbody.children.length === 1 && tbody.children[0].textContent.includes('Initializing')) {
                     tbody.innerHTML = '';
                 }
 
@@ -177,30 +429,36 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     if (!tr) {
                         tr = document.createElement('tr');
                         tr.id = 'row-' + index;
+                        tr.className = 'node-row';
                         tr.onclick = () => toggleChart(node.Name, index);
                         tbody.appendChild(tr);
                     }
                     
                     const successColor = node.SuccessRate > 0.9 ? 'var(--success)' : (node.SuccessRate > 0.5 ? 'var(--warning)' : 'var(--danger)');
-                    const speedStr = node.AvgBandwidth > 0 ? (node.AvgBandwidth > 1000 ? (node.AvgBandwidth/1024).toFixed(2) + ' MB/s' : node.AvgBandwidth.toFixed(1) + ' KB/s') : '-';
+                    const speedStr = node.AvgBandwidth > 0 ? (node.AvgBandwidth > 1000 ? (node.AvgBandwidth/1024).toFixed(2) + ' MB/s' : node.AvgBandwidth.toFixed(1) + ' KB/s') : '<span style="color:var(--text-muted)">-</span>';
                     
-                    let consumedStr = '-';
+                    let consumedStr = '<span style="color:var(--text-muted)">-</span>';
                     if (node.TotalConsumedBytes > 0) {
                         const mb = node.TotalConsumedBytes / (1024 * 1024);
                         if (mb >= 1024) {
                             consumedStr = (mb / 1024).toFixed(2) + ' GB';
                         } else {
-                            consumedStr = mb.toFixed(2) + ' MB';
+                            consumedStr = mb.toFixed(1) + ' MB';
                         }
                     }
+
+                    let rankClass = 'rank';
+                    if (index === 0) rankClass += ' rank-1';
+                    else if (index === 1) rankClass += ' rank-2';
+                    else if (index === 2) rankClass += ' rank-3';
                     
-                    tr.innerHTML = '<td>#' + (index + 1) + '</td>' +
-                        '<td style="font-weight: 500;">' + node.Name + '</td>' +
+                    tr.innerHTML = '<td class="' + rankClass + '">#' + (index + 1) + '</td>' +
+                        '<td style="font-weight: 500; font-size: 1.05rem;">' + node.Name + '</td>' +
                         '<td><span class="score-badge">' + node.Score + '</span></td>' +
-                        '<td style="color: ' + successColor + ';">' + (node.SuccessRate * 100).toFixed(1) + '%</td>' +
-                        '<td>' + node.AvgDelay.toFixed(1) + '</td>' +
-                        '<td>' + speedStr + '</td>' +
-                        '<td>' + consumedStr + '</td>';
+                        '<td class="success-rate" style="color: ' + successColor + ';">' + (node.SuccessRate * 100).toFixed(1) + '%</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif;">' + node.AvgDelay.toFixed(0) + ' ms</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 500;">' + speedStr + '</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif;">' + consumedStr + '</td>';
                 });
             } catch (err) {}
         }
@@ -237,7 +495,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const history = await res.json();
                 
                 if (!history || history.length === 0) {
-                    chartRow.innerHTML = '<td colspan="7" style="text-align:center; padding: 20px;">無歷史資料</td>';
+                    chartRow.innerHTML = '<td colspan="7" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
                     return;
                 }
 
@@ -249,16 +507,24 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 });
                 const data = history.map(h => h.Delay);
 
+                Chart.defaults.color = '#9ca3af';
+                Chart.defaults.font.family = "'Inter', sans-serif";
+
                 chartInstances[index] = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: labels,
                         datasets: [{
-                            label: '延遲 (ms)',
+                            label: 'Ping (ms)',
                             data: data,
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            borderWidth: 2,
+                            borderColor: '#8b5cf6',
+                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                            borderWidth: 3,
+                            pointBackgroundColor: '#c084fc',
+                            pointBorderColor: '#030712',
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
                             fill: true,
                             tension: 0.4
                         }]
@@ -266,15 +532,32 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        plugins: { legend: { display: false } },
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                backgroundColor: 'rgba(17, 24, 39, 0.9)',
+                                titleFont: { size: 14, family: "'Outfit', sans-serif" },
+                                bodyFont: { size: 14, family: "'Inter', sans-serif" },
+                                padding: 12,
+                                cornerRadius: 8,
+                                displayColors: false
+                            }
+                        },
                         scales: {
-                            y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
-                            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8', maxTicksLimit: 12 } }
+                            y: { 
+                                beginAtZero: true, 
+                                grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                                title: { display: true, text: 'Delay (ms)', color: '#6b7280' }
+                            },
+                            x: { 
+                                grid: { display: false }, 
+                                ticks: { maxTicksLimit: 12 } 
+                            }
                         }
                     }
                 });
             } catch (err) {
-                chartRow.innerHTML = '<td colspan="7" style="text-align:center;">載入失敗</td>';
+                chartRow.innerHTML = '<td colspan="7" style="text-align:center; color: var(--danger);">載入圖表失敗</td>';
             }
         }
 
@@ -287,19 +570,15 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const text = document.getElementById('triggerText');
                 
                 if (data.is_running) {
-                    btn.style.opacity = '0.7';
-                    btn.style.cursor = 'not-allowed';
-                    icon.innerHTML = '🔄';
-                    icon.style.animation = 'spin 2s linear infinite';
-                    text.innerText = '測速執行中...';
                     btn.disabled = true;
+                    icon.innerHTML = '🔄';
+                    icon.classList.add('spin-icon');
+                    text.innerText = '測速執行中...';
                 } else {
-                    btn.style.opacity = '1';
-                    btn.style.cursor = 'pointer';
-                    icon.innerHTML = '🚀';
-                    icon.style.animation = 'none';
-                    text.innerText = '立即全局測速';
                     btn.disabled = false;
+                    icon.innerHTML = '🚀';
+                    icon.classList.remove('spin-icon');
+                    text.innerText = '立即測速';
                 }
             } catch (err) {}
         }
@@ -313,8 +592,12 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             } catch (err) {}
         }
 
+        // Initialize loops
+        fetchGroups();
         fetchStats();
         checkStatus();
+        
+        setInterval(fetchGroups, 5000);
         setInterval(fetchStats, 10000);
         setInterval(checkStatus, 2000);
     </script>

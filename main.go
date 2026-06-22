@@ -19,6 +19,9 @@ func main() {
 	api := NewAPIClient(cfg.APIUrl, cfg.APISecret)
 	rover := NewRover(cfg, api, db)
 
+	// 啟動背景測速引擎
+	go rover.Start()
+
 	// 啟動 Web 儀表板
 	go StartWebServer(db, rover, cfg.WebPort)
 

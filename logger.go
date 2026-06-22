@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"github.com/fatih/color"
@@ -62,7 +63,28 @@ func logGroup(group, format string, a ...interface{}) {
 	log.Print(prefix + msg)
 }
 
+var (
+	GlobalNodeProviders = make(map[string]string)
+	providerMutex       sync.RWMutex
+)
+
+func SetNodeProvider(name, provider string) {
+	providerMutex.Lock()
+	defer providerMutex.Unlock()
+	GlobalNodeProviders[name] = provider
+}
+
+func GetNodeProvider(name string) string {
+	providerMutex.RLock()
+	defer providerMutex.RUnlock()
+	return GlobalNodeProviders[name]
+}
+
 func formatNode(name string) string {
+	provider := GetNodeProvider(name)
+	if provider != "" {
+		return colorNode.Sprintf("[%s: %s]", provider, name)
+	}
 	return colorNode.Sprintf("[%s]", name)
 }
 

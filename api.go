@@ -178,11 +178,47 @@ func (api *APIClient) TestBandwidth(testURL string, proxyURL string, timeout tim
 		}
 	}
 
-	duration := time.Since(startTime).Seconds()
-	if duration <= 0 {
+	elapsed := time.Since(startTime)
+	if elapsed.Seconds() <= 0 {
 		return 0, totalBytes, nil
 	}
 
-	kbps := (float64(totalBytes) / 1024.0) / duration
-	return kbps, totalBytes, nil
+	return (float64(totalBytes) / 1024.0) / elapsed.Seconds(), totalBytes, nil
+}
+
+type ProxyProvider struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	VehicleType string `json:"vehicleType"`
+	Proxies     []struct {
+		Name string `json:"name"`
+	} `json:"proxies"`
+}
+
+type ProvidersResponse struct {
+	Providers map[string]ProxyProvider `json:"providers"`
+}
+
+func (c *APIClient) GetProxyProviders() (map[string]ProxyProvider, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+"/providers/proxies", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP error: %d", resp.StatusCode)
+	}
+
+	var providerResp ProvidersResponse
+	if err := json.NewDecoder(resp.Body).Decode(&providerResp); err != nil {
+		return nil, err
+	}
+
+	return providerResp.Providers, nil
 }

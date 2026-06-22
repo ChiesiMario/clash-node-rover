@@ -110,6 +110,18 @@ func (r *Rover) runCheckCycle() {
 	groupNowMap := make(map[string]string)
 	uniqueNodes := make(map[string]bool)
 
+	// 更新全域 Provider 映射
+	providers, err := r.api.GetProxyProviders()
+	if err == nil {
+		for pName, p := range providers {
+			for _, proxy := range p.Proxies {
+				SetNodeProvider(proxy.Name, pName)
+			}
+		}
+	} else {
+		logWarning("無法取得 Provider 資訊: %v", err)
+	}
+
 	for _, groupName := range r.cfg.TargetGroups {
 		group, err := r.api.GetProxyGroup(groupName)
 		if err != nil {

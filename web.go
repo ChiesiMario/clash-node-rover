@@ -12,15 +12,21 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 
 	http.HandleFunc("/api/groups", func(w http.ResponseWriter, r *http.Request) {
 		type GroupStatus struct {
-			Name string `json:"name"`
-			Now  string `json:"now"`
-			All  int    `json:"all_count"`
+			Name     string `json:"name"`
+			Now      string `json:"now"`
+			Provider string `json:"provider"`
+			All      int    `json:"all_count"`
 		}
 		var statuses []GroupStatus
 		for _, gName := range rover.cfg.TargetGroups {
 			g, err := rover.api.GetProxyGroup(gName)
 			if err == nil {
-				statuses = append(statuses, GroupStatus{Name: gName, Now: g.Now, All: len(g.All)})
+				statuses = append(statuses, GroupStatus{
+					Name:     gName,
+					Now:      g.Now,
+					Provider: GetNodeProvider(g.Now),
+					All:      len(g.All),
+				})
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -34,9 +40,16 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 			return
 		}
 
-		list := make([]NodeScore, 0)
+		type StatNode struct {
+			NodeScore
+			Provider string `json:"provider"`
+		}
+		list := make([]StatNode, 0)
 		for _, sc := range scores {
-			list = append(list, sc)
+			list = append(list, StatNode{
+				NodeScore: sc,
+				Provider:  GetNodeProvider(sc.Name),
+			})
 		}
 
 		// Sort by score descending
@@ -399,6 +412,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                                 '<h3 class="group-title">' + g.name + '</h3>' +
                             '</div>' +
                             '<div class="node-now">' + (g.now || '未選擇') + '</div>' +
+                            (g.provider ? '<div style="margin-bottom: 12px; display: inline-block; padding: 4px 10px; border-radius: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); font-size: 0.8rem; color: #d1d5db;">🏢 ' + g.provider + '</div>' : '') +
                             '<div class="node-meta">' +
                                 '<div class="status-dot"></div>' +
                                 '<span>當前運行中 &bull; 總計 ' + g.all_count + ' 個節點</span>' +
@@ -447,13 +461,11 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                         }
                     }
 
-                    let rankClass = 'rank';
-                    if (index === 0) rankClass += ' rank-1';
-                    else if (index === 1) rankClass += ' rank-2';
-                    else if (index === 2) rankClass += ' rank-3';
-                    
-                    tr.innerHTML = '<td class="' + rankClass + '">#' + (index + 1) + '</td>' +
-                        '<td style="font-weight: 500; font-size: 1.05rem;">' + node.Name + '</td>' +
+                    const rankClass = index < 3 ? 'rank-' + (index+1) : '';
+                    let providerTag = node.provider ? '<br><span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; display:inline-block; margin-top:4px;">🏢 ' + node.provider + '</span>' : '';
+
+                    tr.innerHTML = '<td class="rank ' + rankClass + '">#' + (index + 1) + '</td>' +
+                        '<td style="font-weight: 600; color: #fff;">' + node.Name + providerTag + '</td>' +
                         '<td><span class="score-badge">' + node.Score + '</span></td>' +
                         '<td class="success-rate" style="color: ' + successColor + ';">' + (node.SuccessRate * 100).toFixed(1) + '%</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif;">' + node.AvgDelay.toFixed(0) + ' ms</td>' +

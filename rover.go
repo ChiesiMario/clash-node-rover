@@ -47,15 +47,33 @@ func (r *Rover) pickRandomURL() string {
 
 func (r *Rover) Start() {
 	log.Println("Clash Node Rover 啟動...")
+
+	// 啟動時先執行一次資料庫瘦身
+	if err := r.db.Cleanup(r.cfg.CleanupDays); err != nil {
+		log.Printf("資料庫自動瘦身失敗: %v", err)
+	} else {
+		log.Printf("資料庫自動瘦身完成 (保留 %d 天)", r.cfg.CleanupDays)
+	}
+
 	r.runCheckCycle() // 啟動時先跑一次
 
 	ticker := time.NewTicker(r.cfg.CheckInterval)
 	defer ticker.Stop()
 
+	// 每天執行一次資料庫瘦身
+	cleanupTicker := time.NewTicker(24 * time.Hour)
+	defer cleanupTicker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
 			r.runCheckCycle()
+		case <-cleanupTicker.C:
+			if err := r.db.Cleanup(r.cfg.CleanupDays); err != nil {
+				log.Printf("資料庫自動瘦身失敗: %v", err)
+			} else {
+				log.Printf("資料庫自動瘦身完成 (保留 %d 天)", r.cfg.CleanupDays)
+			}
 		case <-r.ManualTrigger:
 			log.Println("收到手動測速信號，立即執行！")
 			ticker.Stop()
@@ -72,6 +90,12 @@ func (r *Rover) Stop() {
 	r.Quit <- struct{}{}
 }
 
+type nodeStat struct {
+	Name  string
+	Delay int
+	Err   error
+}
+
 func (r *Rover) runCheckCycle() {
 	if r.IsRunning {
 		return
@@ -80,34 +104,39 @@ func (r *Rover) runCheckCycle() {
 	defer func() { r.IsRunning = false }()
 
 	log.Println("----------------------------------------")
-	log.Println("開始新一輪節點測試...")
+	log.Println("開始新一輪節點測試 (多群組並行模式)...")
 
-	if err := r.db.CleanOldLogs(r.cfg.HistoryDays); err != nil {
-		log.Printf("清理舊日誌失敗: %v", err)
+	groupNodesMap := make(map[string][]string)
+	groupNowMap := make(map[string]string)
+	uniqueNodes := make(map[string]bool)
+
+	for _, groupName := range r.cfg.TargetGroups {
+		group, err := r.api.GetProxyGroup(groupName)
+		if err != nil {
+			log.Printf("取得代理群組 [%s] 時發生錯誤: %v", groupName, err)
+			continue
+		}
+		if len(group.All) == 0 {
+			log.Printf("代理群組 [%s] 中沒有找到節點。", groupName)
+			continue
+		}
+		groupNodesMap[groupName] = group.All
+		groupNowMap[groupName] = group.Now
+		for _, name := range group.All {
+			uniqueNodes[name] = true
+		}
 	}
 
-	group, err := r.api.GetProxyGroup(r.cfg.TargetGroup)
-	if err != nil {
-		log.Printf("取得代理群組時發生錯誤: %v", err)
+	if len(uniqueNodes) == 0 {
+		log.Println("所有目標群組中都沒有有效節點，退出本次檢查。")
 		return
-	}
-
-	if len(group.All) == 0 {
-		log.Println("目標群組中沒有找到節點。")
-		return
-	}
-
-	type nodeStat struct {
-		Name  string
-		Delay int
-		Err   error
 	}
 
 	now := time.Now()
 	var nodesToTest []string
 
 	// 指數退避檢查
-	for _, name := range group.All {
+	for name := range uniqueNodes {
 		fails := r.failedConsec[name]
 		if fails > 0 {
 			backoffMins := int(math.Pow(2, float64(fails-1)))
@@ -162,10 +191,9 @@ func (r *Rover) runCheckCycle() {
 		close(stats)
 	}()
 
-	var statResults []nodeStat
-	// 1. 邊測邊寫入資料庫，讓網頁能即時看到進度
+	statResultsMap := make(map[string]nodeStat)
 	for s := range stats {
-		statResults = append(statResults, s)
+		statResultsMap[s.Name] = s
 
 		success := (s.Err == nil && s.Delay > 0)
 		if success {
@@ -179,140 +207,175 @@ func (r *Rover) runCheckCycle() {
 		}
 	}
 
-	// 2. 重新取得包含最新紀錄的歷史分數
 	scores, err := r.db.GetScores(r.cfg.HistoryDays)
 	if err != nil {
 		log.Printf("取得歷史分數失敗: %v", err)
 	}
 
-	fastestNode := ""
-	fastestDelay := math.MaxInt32
+	// 3. 為每個群組獨立計算最佳節點
+	groupTargetNodes := make(map[string]string)
 
-	highestScoreNode := ""
-	highestScore := math.MinInt32
-	highestScoreCurrentDelay := 0
+	for _, groupName := range r.cfg.TargetGroups {
+		nodes, ok := groupNodesMap[groupName]
+		if !ok || len(nodes) == 0 {
+			continue
+		}
 
-	// 3. 評估與印出日誌
-	for _, s := range statResults {
-		if s.Err != nil {
-			log.Printf("節點 [%s] 測試失敗: %v", s.Name, s.Err)
-		} else {
-			scoreData, ok := scores[s.Name]
-			scoreStr := "無資料"
-			if ok {
-				scoreStr = fmt.Sprintf("%d (成功率: %.1f%%)", scoreData.Score, scoreData.SuccessRate*100)
+		fastestNode := ""
+		fastestDelay := math.MaxInt32
+
+		highestScoreNode := ""
+		highestScore := math.MinInt32
+		highestScoreCurrentDelay := 0
+
+		for _, name := range nodes {
+			s, tested := statResultsMap[name]
+			if !tested || s.Err != nil {
+				continue
 			}
-
-			log.Printf("節點 [%s] 延遲: %d 毫秒 | 質量分數: %s", s.Name, s.Delay, scoreStr)
 
 			if s.Delay > 0 && s.Delay < fastestDelay {
 				fastestDelay = s.Delay
 				fastestNode = s.Name
 			}
 
-			if ok && scoreData.Score > highestScore {
+			scoreData, okScore := scores[s.Name]
+			if okScore && scoreData.Score > highestScore {
 				highestScore = scoreData.Score
 				highestScoreNode = s.Name
 				highestScoreCurrentDelay = s.Delay
 			}
 		}
-	}
 
-	if fastestNode == "" {
-		log.Println("所有參與測試的節點皆失敗，保留目前節點。")
-		return
-	}
+		if fastestNode == "" {
+			log.Printf("[%s] 所有參與測試的節點皆失敗，保留目前節點。", groupName)
+			groupTargetNodes[groupName] = groupNowMap[groupName]
+			continue
+		}
 
-	targetNode := fastestNode
-	reason := "當前速度最快"
+		targetNode := fastestNode
+		reason := "當前速度最快"
 
-	if highestScoreNode != "" {
-		diff := highestScoreCurrentDelay - fastestDelay
-		if diff <= r.cfg.DelayTolerance {
-			targetNode = highestScoreNode
-			reason = fmt.Sprintf("最高質量分，且與最快節點差距僅 %d 毫秒", diff)
+		if highestScoreNode != "" {
+			diff := highestScoreCurrentDelay - fastestDelay
+			if diff <= r.cfg.DelayTolerance {
+				targetNode = highestScoreNode
+				reason = fmt.Sprintf("最高質量分，且與最快節點差距僅 %d 毫秒", diff)
+			} else {
+				reason = fmt.Sprintf("最高質量分節點比最快節點慢太多 (差距 %d 毫秒)，強制使用最快節點", diff)
+			}
+		}
+
+		log.Printf("[%s] 選擇節點: [%s] | 理由: %s", groupName, targetNode, reason)
+		groupTargetNodes[groupName] = targetNode
+
+		if targetNode != groupNowMap[groupName] && groupNowMap[groupName] != "" {
+			log.Printf("[%s] 從 [%s] 切換至更好的節點 [%s]", groupName, groupNowMap[groupName], targetNode)
+			if err := r.api.SelectProxy(groupName, targetNode); err != nil {
+				log.Printf("[%s] 切換代理節點失敗: %v", groupName, err)
+			} else {
+				log.Printf("[%s] 成功切換代理節點。", groupName)
+			}
 		} else {
-			reason = fmt.Sprintf("最高質量分節點比最快節點慢太多 (差距 %d 毫秒)，強制使用最快節點", diff)
+			log.Printf("[%s] 目前的節點 [%s] 依然是最佳選擇。", groupName, targetNode)
 		}
 	}
 
-	log.Printf("初步選擇節點: [%s] | 理由: %s", targetNode, reason)
-
-	if targetNode != group.Now {
-		log.Printf("從 [%s] 切換至更好的節點 [%s]", group.Now, targetNode)
-		if err := r.api.SelectProxy(r.cfg.TargetGroup, targetNode); err != nil {
-			log.Printf("切換代理節點失敗: %v", err)
-		} else {
-			log.Println("成功切換代理節點。")
-			group.Now = targetNode
-		}
-	} else {
-		log.Printf("目前的節點 [%s] 依然是最佳選擇。", group.Now)
-	}
-
-	// 4. 反壟斷公平探索機制 (Monopoly Breaker)
-	// 尋找「成功率高、BaseScore 高，且不在測速冷卻期內」的潛力節點進行頻寬測試
-	var bwTestCandidate string
-	highestBaseScore := -999999
+	// 4. 反壟斷公平探索機制 (Monopoly Breaker) & 頻寬測速
 	targetIntervalDuration := time.Duration(r.cfg.BandwidthTestInterval) * time.Minute
 	explorationDuration := time.Duration(r.cfg.ExplorationCooldown) * time.Minute
 
-	// 確保至少取得最新的分數資訊來判斷
 	scores, _ = r.db.GetScores(r.cfg.HistoryDays)
 
-	for name, sc := range scores {
-		// 只面試「優等生」：成功率至少 80%，避免切換後連線中斷
-		if sc.SuccessRate < 0.8 {
+	alreadyTestedInCycle := make(map[string]bool)
+
+	for _, groupName := range r.cfg.TargetGroups {
+		nodes, ok := groupNodesMap[groupName]
+		if !ok || len(nodes) == 0 {
 			continue
 		}
-		// 必須已過探索冷卻期
-		if time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
-			if sc.BaseScore > highestBaseScore {
-				highestBaseScore = sc.BaseScore
-				bwTestCandidate = name
+
+		var bwTestCandidate string
+		highestBaseScore := -999999
+
+		// 1. 在此群組內尋找探索面試候選人
+		for _, name := range nodes {
+			sc, ok := scores[name]
+			if !ok || sc.SuccessRate < 0.8 {
+				continue
+			}
+			if time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
+				if sc.BaseScore > highestBaseScore {
+					highestBaseScore = sc.BaseScore
+					bwTestCandidate = name
+				}
 			}
 		}
-	}
 
-	// 如果所有好節點都在冷卻期，但 targetNode 尚未測速過 (例如剛開機)，就測 targetNode
-	if bwTestCandidate == "" && targetNode != "" && time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration {
-		bwTestCandidate = targetNode
-	}
+		// 2. 如果沒有面試候選人，看原本的最佳節點是否需要測速
+		targetNode := groupTargetNodes[groupName]
+		if bwTestCandidate == "" && targetNode != "" {
+			if time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration {
+				bwTestCandidate = targetNode
+			}
+		}
 
-		if bwTestCandidate != "" {
-		if bwTestCandidate != targetNode && targetNode != "" {
-			log.Printf("💡 觸發反壟斷探索機制：切暫時換至潛力節點 [%s] 進行測速 (BaseScore: %d)", bwTestCandidate, highestBaseScore)
-			err := r.api.SelectProxy(r.cfg.TargetGroup, bwTestCandidate)
-			if err != nil {
-				log.Printf("無法切換至候選節點: %v", err)
-				bwTestCandidate = "" // 取消本次面試
+		if bwTestCandidate == "" {
+			log.Printf("[%s] 目前所有優質節點皆在頻寬測速冷卻期內，跳過下載測試以節省流量。", groupName)
+			continue
+		}
+
+		if alreadyTestedInCycle[bwTestCandidate] {
+			log.Printf("[%s] 節點 [%s] 在本週期已經測速過，跳過重複測速。", groupName, bwTestCandidate)
+			continue
+		}
+
+		// 準備測速
+		var borrowGroup string
+		var originalTarget string
+
+		if r.cfg.DedicatedTestGroup != "" {
+			borrowGroup = r.cfg.DedicatedTestGroup
+			// 取得專屬測速群組目前的節點，以便測速完可以切回來
+			if g, err := r.api.GetProxyGroup(borrowGroup); err == nil {
+				originalTarget = g.Now
 			}
 		} else {
-			log.Printf("選定目標節點: [%s]，準備進行真實頻寬測試...", bwTestCandidate)
+			// 如果沒有設定專屬群組，就借用目前正在處理的這個群組
+			borrowGroup = groupName
+			originalTarget = targetNode
 		}
 
-		if bwTestCandidate != "" {
-			r.lastBandwidthTest[bwTestCandidate] = time.Now()
-			
-			// 透過 Clash proxy 進行下載測試
-			speedKBps, totalBytes, err := r.api.TestBandwidth(r.cfg.BandwidthTestURL, r.cfg.ClashProxyURL, 15*time.Second)
-			
+		isExploration := (bwTestCandidate != originalTarget)
+
+		if isExploration {
+			log.Printf("[%s] 💡 觸發反壟斷探索機制：切換群組 [%s] 至潛力節點 [%s] 進行測速", groupName, borrowGroup, bwTestCandidate)
+			err := r.api.SelectProxy(borrowGroup, bwTestCandidate)
 			if err != nil {
-				log.Printf("頻寬測試失敗: %v", err)
-				// 真實的連線異常或 HTTP 錯誤，才視為失敗並寫入 Ping 紀錄
-				r.db.InsertLog(bwTestCandidate, 9999, false)
-			} else {
-				log.Printf("頻寬測試完成: %.2f KB/s", speedKBps)
-				r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
+				log.Printf("[%s] 無法切換至候選節點: %v", groupName, err)
+				continue
 			}
-
-			// 如果有切換過代理，記得切回冠軍節點
-			if bwTestCandidate != targetNode && targetNode != "" {
-				log.Printf("探索測速完成，將代理切回最佳節點 [%s]", targetNode)
-				r.api.SelectProxy(r.cfg.TargetGroup, targetNode)
-			}
+		} else {
+			log.Printf("[%s] 準備針對最佳節點 [%s] 進行真實頻寬測試...", groupName, bwTestCandidate)
 		}
-	} else if targetNode != "" {
-		log.Printf("目前所有優質節點皆在頻寬測速冷卻期 (%d 分鐘) 內，跳過下載測試以節省流量。", r.cfg.BandwidthTestInterval)
+
+		r.lastBandwidthTest[bwTestCandidate] = time.Now()
+		alreadyTestedInCycle[bwTestCandidate] = true
+		
+		speedKBps, totalBytes, err := r.api.TestBandwidth(r.cfg.BandwidthTestURL, r.cfg.ClashProxyURL, 15*time.Second)
+		
+		if err != nil {
+			log.Printf("[%s] 頻寬測試失敗: %v", groupName, err)
+			r.db.InsertLog(bwTestCandidate, 9999, false)
+		} else {
+			log.Printf("[%s] 頻寬測試完成: %.2f KB/s", groupName, speedKBps)
+			r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
+		}
+
+		// 切回原本的冠軍節點
+		if isExploration && originalTarget != "" {
+			log.Printf("[%s] 探索測速完成，將群組 [%s] 切回節點 [%s]", groupName, borrowGroup, originalTarget)
+			r.api.SelectProxy(borrowGroup, originalTarget)
+		}
 	}
 }

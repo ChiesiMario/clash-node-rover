@@ -16,11 +16,13 @@ type Config struct {
 	APIUrl                 string        `yaml:"api_url"`
 	APISecret              string        `yaml:"api_secret"`
 	CheckInterval          time.Duration `yaml:"check_interval"`
-	TargetGroup            string        `yaml:"target_group"`
+	TargetGroups           []string      `yaml:"target_groups"`
+	DedicatedTestGroup     string        `yaml:"dedicated_test_group"`
 	TestURLs               []string      `yaml:"test_urls"`
 	TestTimeout            time.Duration `yaml:"test_timeout"`
 	DelayTolerance         int           `yaml:"delay_tolerance"` // milliseconds
 	HistoryDays            int           `yaml:"history_days"`    // days
+	CleanupDays            int           `yaml:"cleanup_days"`    // days
 	MaxConcurrent          int           `yaml:"max_concurrent"`
 	WebPort                int           `yaml:"web_port"`
 	ClashProxyURL          string        `yaml:"clash_proxy_url"`
@@ -44,8 +46,14 @@ api_secret: "%s"
 # 背景檢查與測速的間隔時間 (例如 60s, 1m, 5m)
 check_interval: %ds
 
-# 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (例如 PROXY 或 🤖 Node Rover)
-target_group: "%s"
+# 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (支援多個群組)
+target_groups:
+  - "🤖 Node Rover"
+
+# 專屬的無感測速群組 (Optional，留空則自動借用上述的 target_groups)。
+# 如果設定此群組，Rover 測速時將不再借用你正在上網的群組，達成 100% 無感背景測速。
+# (強烈建議：需配合 Clash 設定檔開啟獨立 Port 並將 clash_proxy_url 改為該 Port)
+dedicated_test_group: ""
 
 # 用來進行 Ping 測試的目標網址列表，會隨機抽取一個進行測試
 test_urls:
@@ -61,6 +69,9 @@ delay_tolerance: 100
 
 # 歷史紀錄保留天數 (用於計算品質分數與網頁折線圖)
 history_days: 7
+
+# 資料庫自動瘦身機制 (超過此天數的陳舊日誌將被自動刪除並壓縮資料庫體積)
+cleanup_days: 7
 
 # 最大併發測速數量 (數字越大測速越快，但可能短暫佔用系統資源)
 max_concurrent: 10
@@ -90,7 +101,6 @@ func writeYAMLConfig(cfg *Config) error {
 		cfg.APIUrl,
 		cfg.APISecret,
 		int(cfg.CheckInterval.Seconds()),
-		cfg.TargetGroup,
 	)
 	return os.WriteFile(ConfigFile, []byte(yamlStr), 0644)
 }
@@ -108,6 +118,7 @@ func loadConfig() (*Config, error) {
 				APISecret              string        `json:"api_secret"`
 				CheckInterval          time.Duration `json:"check_interval"`
 				TargetGroup            string        `json:"target_group"`
+				TargetGroups           []string      `json:"target_groups"`
 			}
 			json.Unmarshal(data, &oldCfg)
 			
@@ -116,8 +127,15 @@ func loadConfig() (*Config, error) {
 			cfg.APISecret = oldCfg.APISecret
 			cfg.CheckInterval = oldCfg.CheckInterval
 			if cfg.CheckInterval == 0 { cfg.CheckInterval = 60 * time.Second }
-			cfg.TargetGroup = oldCfg.TargetGroup
-			if cfg.TargetGroup == "" { cfg.TargetGroup = "🤖 Node Rover" }
+			
+			// 自動將單一群組轉換為陣列
+			if len(oldCfg.TargetGroups) > 0 {
+				cfg.TargetGroups = oldCfg.TargetGroups
+			} else if oldCfg.TargetGroup != "" {
+				cfg.TargetGroups = []string{oldCfg.TargetGroup}
+			} else {
+				cfg.TargetGroups = []string{"🤖 Node Rover"}
+			}
 			
 			// 寫入帶有註解的 YAML
 			writeYAMLConfig(&cfg)
@@ -156,6 +174,13 @@ func loadConfig() (*Config, error) {
 	}
 	if cfg.HistoryDays <= 0 {
 		cfg.HistoryDays = 7
+	}
+	if cfg.CleanupDays <= 0 {
+		cfg.CleanupDays = 7
+	}
+	if len(cfg.TargetGroups) == 0 {
+		// 如果 YAML 裡面剛好沒有設定 (可能是舊版 YAML 升級)，則放入預設
+		cfg.TargetGroups = []string{"🤖 Node Rover"}
 	}
 	if cfg.MaxConcurrent <= 0 {
 		cfg.MaxConcurrent = 10
@@ -213,11 +238,12 @@ func promptForConfig() (*Config, error) {
 		APIUrl:                 apiUrl,
 		APISecret:              apiSecret,
 		CheckInterval:          time.Duration(interval) * time.Second,
-		TargetGroup:            "🤖 Node Rover",
+		TargetGroups:           []string{"🤖 Node Rover"},
 		TestURLs:               []string{"http://www.gstatic.com/generate_204", "http://cp.cloudflare.com/generate_204", "http://www.apple.com/library/test/success.html"},
 		TestTimeout:            5 * time.Second,
 		DelayTolerance:         100,
 		HistoryDays:            7,
+		CleanupDays:            7,
 		MaxConcurrent:          10,
 		WebPort:                9091,
 		ClashProxyURL:          "http://127.0.0.1:7890",

@@ -203,6 +203,27 @@ func (d *DB) GetNodeHistory(nodeName string, hours int) ([]PingLog, error) {
 	return history, nil
 }
 
+func (d *DB) Cleanup(days int) error {
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
+	
+	// Delete old ping logs
+	if _, err := d.sqlDB.Exec("DELETE FROM ping_logs WHERE timestamp < ?", cutoff); err != nil {
+		return err
+	}
+	
+	// Delete old bandwidth logs
+	if _, err := d.sqlDB.Exec("DELETE FROM bandwidth_logs WHERE timestamp < ?", cutoff); err != nil {
+		return err
+	}
+	
+	// Reclaim space
+	if _, err := d.sqlDB.Exec("VACUUM"); err != nil {
+		return err
+	}
+	
+	return nil
+}
+
 func (d *DB) Close() error {
 	return d.sqlDB.Close()
 }

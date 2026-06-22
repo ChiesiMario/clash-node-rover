@@ -10,7 +10,14 @@ api_secret: ""
 check_interval: 60s
 
 # 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (例如 PROXY 或 🤖 Node Rover)
-target_group: "🤖 Node Rover"
+target_groups:
+  - "🤖 Node Rover"
+  - "👋🏻 手動選擇"
+
+# 專屬的無感測速群組 (Optional，留空則自動借用上述的 target_groups)。
+# 如果設定此群組，Rover 測速時將不再借用你正在上網的群組，達成 100% 無感背景測速。
+# (強烈建議：需配合 Clash 設定檔開啟獨立 Port 並將 clash_proxy_url 改為該 Port)
+dedicated_test_group: "🤖 Node Rover SpeedTest"
 
 # 用來進行 Ping 測試的目標網址列表，會隨機抽取一個進行測試
 test_urls:
@@ -34,7 +41,7 @@ max_concurrent: 10
 web_port: 9091
 
 # Clash 的 HTTP 代理網址 (用於真實下載測速)
-clash_proxy_url: "http://127.0.0.1:7890"
+clash_proxy_url: "http://127.0.0.1:7891"
 
 # 真實頻寬測速用的下載檔案網址 (建議使用測速專用檔案)
 bandwidth_test_url: "http://speedtest.tele2.net/1MB.zip"

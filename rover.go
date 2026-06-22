@@ -543,6 +543,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 					r.db.InsertBandwidthLog(candidate, speedKBps, totalBytes)
 				}
 			} else {
+				logMuted("節點 %s%s 處於下載測速冷卻期間，跳過極限頻寬測試。", formatNode(candidate), tag)
 				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("⏳ 下載%s：冷卻中，跳過", tag))
 			}
 

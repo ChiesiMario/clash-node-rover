@@ -76,4 +76,4 @@ enable_browser_test: true
 browser_test_urls:
   - "https://www.google.com"
   - "https://www.youtube.com"
-  - "https://github.com"
+  - "https://github.com/ChiesiMario/clash-node-rover"

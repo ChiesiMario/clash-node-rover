@@ -12,6 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type NotificationConfig struct {
+	Enable             bool `yaml:"enable"`
+	NotifyOnFailover   bool `yaml:"notify_on_failover"`
+	NotifyOnBetterNode bool `yaml:"notify_on_better_node"`
+}
+
 type Config struct {
 	APIUrl                 string        `yaml:"api_url"`
 	APISecret              string        `yaml:"api_secret"`
@@ -34,6 +40,8 @@ type Config struct {
 	EnableFailover         bool          `yaml:"enable_failover"`
 	FailoverInterval       int           `yaml:"failover_interval"` // seconds
 	FailoverMaxFails       int           `yaml:"failover_max_fails"`
+
+	Notifications          NotificationConfig `yaml:"notifications"`
 }
 
 const ConfigFile = "rover_config.yaml"
@@ -107,6 +115,12 @@ failover_interval: 3
 
 # 秒級急救機制的連續失敗次數門檻 (達到此數字才觸發急救，防止網路瞬斷誤判)
 failover_max_fails: 2
+
+# 原生桌面通知設定
+notifications:
+  enable: true
+  notify_on_failover: true
+  notify_on_better_node: false
 `
 
 func writeYAMLConfig(cfg *Config) error {
@@ -282,6 +296,11 @@ func promptForConfig() (*Config, error) {
 		EnableFailover:         true,
 		FailoverInterval:       3,
 		FailoverMaxFails:       2,
+		Notifications: NotificationConfig{
+			Enable:             true,
+			NotifyOnFailover:   true,
+			NotifyOnBetterNode: false,
+		},
 	}
 
 	if err := writeYAMLConfig(cfg); err != nil {

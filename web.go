@@ -5,7 +5,30 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
+
+	"github.com/gorilla/websocket"
 )
+
+var (
+	wsUpgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
+	wsClients      = make(map[*websocket.Conn]bool)
+	wsClientsMutex sync.Mutex
+)
+
+func BroadcastRefresh() {
+	wsClientsMutex.Lock()
+	defer wsClientsMutex.Unlock()
+	for client := range wsClients {
+		err := client.WriteJSON(map[string]string{"type": "refresh"})
+		if err != nil {
+			client.Close()
+			delete(wsClients, client)
+		}
+	}
+}
 
 func StartWebServer(db *DB, rover *Rover, port int) {
 	http.HandleFunc("/", handleIndex)
@@ -18,7 +41,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 			All      int    `json:"all_count"`
 		}
 		var statuses []GroupStatus
-		for _, gName := range rover.cfg.TargetGroups {
+		for _, gName := range rover.GetConfig().TargetGroups {
 			g, err := rover.api.GetProxyGroup(gName)
 			if err == nil {
 				statuses = append(statuses, GroupStatus{
@@ -34,7 +57,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 	})
 
 	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
-		scores, err := db.GetScores(rover.cfg.HistoryDays)
+		scores, err := db.GetScores(rover.GetConfig().HistoryDays)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -94,6 +117,31 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
+	http.HandleFunc("/api/ws", func(w http.ResponseWriter, r *http.Request) {
+		conn, err := wsUpgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		wsClientsMutex.Lock()
+		wsClients[conn] = true
+		wsClientsMutex.Unlock()
+
+		// 讓連線保持開啟直到斷線
+		go func() {
+			defer func() {
+				wsClientsMutex.Lock()
+				delete(wsClients, conn)
+				wsClientsMutex.Unlock()
+				conn.Close()
+			}()
+			for {
+				if _, _, err := conn.ReadMessage(); err != nil {
+					break
+				}
+			}
+		}()
 	})
 
 	addr := fmt.Sprintf(":%d", port)
@@ -599,19 +647,53 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             const btn = document.getElementById('triggerBtn');
             if (btn.disabled) return;
             try {
+                btn.disabled = true;
+                const icon = document.getElementById('triggerIcon');
+                const text = document.getElementById('triggerText');
+                icon.innerHTML = '🔄';
+                icon.classList.add('spin-icon');
+                text.innerText = '正在發起...';
                 await fetch('/api/trigger', { method: 'POST' });
-                checkStatus();
-            } catch (err) {}
+            } catch (err) {
+                btn.disabled = false;
+            }
         }
 
-        // Initialize loops
+        // Initialize first load
         fetchGroups();
         fetchStats();
         checkStatus();
-        
-        setInterval(fetchGroups, 5000);
-        setInterval(fetchStats, 10000);
-        setInterval(checkStatus, 2000);
+
+        // WebSocket for real-time updates
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = protocol + '//' + window.location.host + '/api/ws';
+            const ws = new WebSocket(wsUrl);
+
+            ws.onmessage = function(event) {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'refresh') {
+                        // Flash UI to indicate real-time update
+                        document.body.style.transition = 'background-color 0.3s ease';
+                        document.body.style.backgroundColor = '#1a1f3c';
+                        setTimeout(() => document.body.style.backgroundColor = '#0f172a', 300);
+
+                        fetchGroups();
+                        fetchStats();
+                        checkStatus();
+                    }
+                } catch(e) {}
+            };
+
+            ws.onclose = function() {
+                setTimeout(connectWebSocket, 3000); // Reconnect on close
+            };
+        }
+
+        connectWebSocket();
+        // Fallback polling for status just in case
+        setInterval(checkStatus, 5000);
     </script>
 </body>
 </html>`

@@ -4,12 +4,16 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
 	"sync"
 	"time"
+
+	"github.com/gen2brain/beeep"
 )
 
 type Rover struct {
 	cfg               *Config
+	cfgMutex          sync.RWMutex
 	api               *APIClient
 	db                *DB
 	consecutiveFailed int
@@ -37,30 +41,67 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 	}
 }
 
+func (r *Rover) GetConfig() *Config {
+	r.cfgMutex.RLock()
+	defer r.cfgMutex.RUnlock()
+	return r.cfg
+}
+
+func (r *Rover) watchConfig() {
+	var lastModTime time.Time
+	info, err := os.Stat(ConfigFile)
+	if err == nil {
+		lastModTime = info.ModTime()
+	}
+
+	for {
+		time.Sleep(2 * time.Second)
+		info, err := os.Stat(ConfigFile)
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(lastModTime) {
+			lastModTime = info.ModTime()
+			newCfg, err := loadConfig()
+			if err == nil {
+				r.cfgMutex.Lock()
+				r.cfg = newCfg
+				r.cfgMutex.Unlock()
+				logInfo("🔄 偵測到設定檔變更，已自動重新載入")
+			} else {
+				logError("載入新設定檔失敗: %v", err)
+			}
+		}
+	}
+}
+
 func (r *Rover) pickRandomURL() string {
-	if len(r.cfg.TestURLs) == 0 {
+	if len(r.GetConfig().TestURLs) == 0 {
 		return "http://www.gstatic.com/generate_204"
 	}
-	return r.cfg.TestURLs[rand.Intn(len(r.cfg.TestURLs))]
+	return r.GetConfig().TestURLs[rand.Intn(len(r.GetConfig().TestURLs))]
 }
 
 func (r *Rover) Start() {
 	logHeader("Clash Node Rover 啟動")
 
+	// 啟動設定檔監控
+	go r.watchConfig()
+
 	// 啟動時先執行一次資料庫瘦身
-	if err := r.db.Cleanup(r.cfg.CleanupDays); err != nil {
+	if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
 		logError("資料庫自動瘦身失敗: %v", err)
 	} else {
-		logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.cfg.CleanupDays))
+		logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
 	}
 
 	r.runCheckCycle() // 啟動時先跑一次
 
-	if r.cfg.EnableFailover {
+	if r.GetConfig().EnableFailover {
 		go r.runFailoverWatchdog()
 	}
 
-	ticker := time.NewTicker(r.cfg.CheckInterval)
+	ticker := time.NewTicker(r.GetConfig().CheckInterval)
 	defer ticker.Stop()
 
 	// 每天執行一次資料庫瘦身
@@ -72,16 +113,16 @@ func (r *Rover) Start() {
 		case <-ticker.C:
 			r.runCheckCycle()
 		case <-cleanupTicker.C:
-			if err := r.db.Cleanup(r.cfg.CleanupDays); err != nil {
+			if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
 				logError("資料庫自動瘦身失敗: %v", err)
 			} else {
-				logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.cfg.CleanupDays))
+				logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
 			}
 		case <-r.ManualTrigger:
 			logInfo("收到手動測速信號，立即執行！")
 			ticker.Stop()
 			r.runCheckCycle()
-			ticker.Reset(r.cfg.CheckInterval)
+			ticker.Reset(r.GetConfig().CheckInterval)
 		case <-r.Quit:
 			logWarning("背景測速引擎已停止。")
 			return
@@ -104,7 +145,11 @@ func (r *Rover) runCheckCycle() {
 		return
 	}
 	r.IsRunning = true
-	defer func() { r.IsRunning = false }()
+	defer func() { 
+		r.IsRunning = false 
+		logReportEnd()
+		BroadcastRefresh()
+	}()
 
 	groupNodesMap := make(map[string][]string)
 	groupNowMap := make(map[string]string)
@@ -122,7 +167,7 @@ func (r *Rover) runCheckCycle() {
 		logWarning("無法取得 Provider 資訊: %v", err)
 	}
 
-	for _, groupName := range r.cfg.TargetGroups {
+	for _, groupName := range r.GetConfig().TargetGroups {
 		group, err := r.api.GetProxyGroup(groupName)
 		if err != nil {
 			continue
@@ -150,8 +195,8 @@ func (r *Rover) runCheckCycle() {
 		fails := r.failedConsec[name]
 		if fails > 0 {
 			backoffMins := int(math.Pow(2, float64(fails-1)))
-			if backoffMins > r.cfg.MaxBackoffMinutes {
-				backoffMins = r.cfg.MaxBackoffMinutes
+			if backoffMins > r.GetConfig().MaxBackoffMinutes {
+				backoffMins = r.GetConfig().MaxBackoffMinutes
 			}
 
 			lastCheck := r.lastCheckTime[name]
@@ -170,7 +215,7 @@ func (r *Rover) runCheckCycle() {
 		jobs := make(chan string, len(nodesToTest))
 
 		var wg sync.WaitGroup
-		workerCount := r.cfg.MaxConcurrent
+		workerCount := r.GetConfig().MaxConcurrent
 		if workerCount > len(nodesToTest) {
 			workerCount = len(nodesToTest)
 		}
@@ -182,7 +227,7 @@ func (r *Rover) runCheckCycle() {
 				defer wg.Done()
 				for name := range jobs {
 					testUrl := r.pickRandomURL()
-					delay, err := r.api.TestProxyDelay(name, testUrl, r.cfg.TestTimeout)
+					delay, err := r.api.TestProxyDelay(name, testUrl, r.GetConfig().TestTimeout)
 					stats <- nodeStat{Name: name, Delay: delay, Err: err}
 				}
 			}()
@@ -211,7 +256,7 @@ func (r *Rover) runCheckCycle() {
 		}
 	}
 
-	scores, _ := r.db.GetScores(r.cfg.HistoryDays)
+	scores, _ := r.db.GetScores(r.GetConfig().HistoryDays)
 
 	// ---------------------------
 	// 報告資料收集
@@ -225,7 +270,7 @@ func (r *Rover) runCheckCycle() {
 	groupTargetNodes := make(map[string]string)
 	pendingSwitches := make(map[string]string)
 
-	for _, groupName := range r.cfg.TargetGroups {
+	for _, groupName := range r.GetConfig().TargetGroups {
 		nodes, ok := groupNodesMap[groupName]
 		if !ok || len(nodes) == 0 {
 			groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprint("無法取得群組節點或群組為空"))
@@ -269,7 +314,7 @@ func (r *Rover) runCheckCycle() {
 
 		if highestScoreNode != "" {
 			diff := highestScoreCurrentDelay - fastestDelay
-			if diff <= r.cfg.DelayTolerance {
+			if diff <= r.GetConfig().DelayTolerance {
 				targetNode = highestScoreNode
 				reason = colorSuccess.Sprintf("最高質量分，且與最快差距僅 %dms", diff)
 			} else {
@@ -279,24 +324,30 @@ func (r *Rover) runCheckCycle() {
 
 		groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("決策：選擇 %s (%s)", formatNode(targetNode), reason))
 		groupTargetNodes[groupName] = targetNode
-
-		if targetNode != groupNowMap[groupName] && groupNowMap[groupName] != "" {
-			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("狀態：預計從 %s 切換至 %s", formatNode(groupNowMap[groupName]), formatNode(targetNode)))
+		
+		currentNow := groupNowMap[groupName]
+		if targetNode != currentNow && currentNow != "" {
+			groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("狀態：預計從 %s 切換至 %s", formatNode(currentNow), formatNode(targetNode)))
+			systemReports = append(systemReports, colorSuccess.Sprintf("切換：群組 [%s] 成功切換至 %s", groupName, formatNode(targetNode)))
 			pendingSwitches[groupName] = targetNode
+			
+			if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
+				beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
+			}
 		} else {
 			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("狀態：目前的節點 %s 依然是最佳選擇", formatNode(targetNode)))
 		}
 	}
 
 	// 4. 反壟斷公平探索機制 (Monopoly Breaker) & 頻寬測速
-	targetIntervalDuration := time.Duration(r.cfg.BandwidthTestInterval) * time.Minute
-	explorationDuration := time.Duration(r.cfg.ExplorationCooldown) * time.Minute
+	targetIntervalDuration := time.Duration(r.GetConfig().BandwidthTestInterval) * time.Minute
+	explorationDuration := time.Duration(r.GetConfig().ExplorationCooldown) * time.Minute
 
-	scores, _ = r.db.GetScores(r.cfg.HistoryDays)
+	scores, _ = r.db.GetScores(r.GetConfig().HistoryDays)
 
 	alreadyTestedInCycle := make(map[string]bool)
 
-	for _, groupName := range r.cfg.TargetGroups {
+	for _, groupName := range r.GetConfig().TargetGroups {
 		nodes, ok := groupNodesMap[groupName]
 		if !ok || len(nodes) == 0 {
 			continue
@@ -339,8 +390,8 @@ func (r *Rover) runCheckCycle() {
 		var borrowGroup string
 		var originalTarget string
 
-		if r.cfg.DedicatedTestGroup != "" {
-			borrowGroup = r.cfg.DedicatedTestGroup
+		if r.GetConfig().DedicatedTestGroup != "" {
+			borrowGroup = r.GetConfig().DedicatedTestGroup
 			if g, err := r.api.GetProxyGroup(borrowGroup); err == nil {
 				originalTarget = g.Now
 			}
@@ -362,7 +413,7 @@ func (r *Rover) runCheckCycle() {
 		r.lastBandwidthTest[bwTestCandidate] = time.Now()
 		alreadyTestedInCycle[bwTestCandidate] = true
 		
-		speedKBps, totalBytes, err := r.api.TestBandwidth(r.cfg.BandwidthTestURL, r.cfg.ClashProxyURL, 15*time.Second)
+		speedKBps, totalBytes, err := r.api.TestBandwidth(r.GetConfig().BandwidthTestURL, r.GetConfig().ClashProxyURL, 15*time.Second)
 		
 		if err != nil {
 			groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("測速：%s 頻寬測試失敗", formatNode(bwTestCandidate)))
@@ -403,7 +454,7 @@ func (r *Rover) runCheckCycle() {
 	// 列印樹狀結構報告
 	// ---------------------------
 	logReportStart()
-	for _, groupName := range r.cfg.TargetGroups {
+	for _, groupName := range r.GetConfig().TargetGroups {
 		logGroupTitle(groupName)
 		lines := groupReports[groupName]
 		if len(lines) == 0 {
@@ -419,12 +470,11 @@ func (r *Rover) runCheckCycle() {
 	for i, line := range systemReports {
 		logTreeItem(i == len(systemReports)-1, line)
 	}
-	logReportEnd()
 }
 
 func (r *Rover) runFailoverWatchdog() {
-	logInfo("啟動秒級急救機制 Watchdog (偵測間隔: %s 秒)", formatVal(r.cfg.FailoverInterval))
-	ticker := time.NewTicker(time.Duration(r.cfg.FailoverInterval) * time.Second)
+	logInfo("啟動秒級急救機制 Watchdog (偵測間隔: %s 秒)", formatVal(r.GetConfig().FailoverInterval))
+	ticker := time.NewTicker(time.Duration(r.GetConfig().FailoverInterval) * time.Second)
 	defer ticker.Stop()
 
 	consecutiveFails := make(map[string]int)
@@ -440,7 +490,7 @@ func (r *Rover) runFailoverWatchdog() {
 			}
 
 			// 針對每個群組檢查目前的節點
-			for _, groupName := range r.cfg.TargetGroups {
+			for _, groupName := range r.GetConfig().TargetGroups {
 				group, err := r.api.GetProxyGroup(groupName)
 				if err != nil || group.Now == "" {
 					continue
@@ -457,14 +507,14 @@ func (r *Rover) runFailoverWatchdog() {
 						logGroup(groupName, colorWarning.Sprintf("節點 %s 失去回應，進入黃色警戒...", formatNode(activeNode)))
 					}
 					
-					if consecutiveFails[groupName] >= r.cfg.FailoverMaxFails {
+					if consecutiveFails[groupName] >= r.GetConfig().FailoverMaxFails {
 						logFailover("[%s] 節點 %s 已癱瘓！觸發秒級急救！", groupName, activeNode)
 						
 						// 寫入懲罰
 						r.db.InsertLog(activeNode, 9999, false)
 						
 						// 找備胎
-						scores, _ := r.db.GetScores(r.cfg.HistoryDays)
+						scores, _ := r.db.GetScores(r.GetConfig().HistoryDays)
 						var bestAlt string
 						var highestScore = -999999
 						
@@ -482,7 +532,13 @@ func (r *Rover) runFailoverWatchdog() {
 						
 						if bestAlt != "" {
 							r.api.SelectProxy(groupName, bestAlt)
-							logFailover("[%s] 已強制切換至備用節點 %s", groupName, bestAlt)
+							logFailover("群組 [%s] 已觸發急救機制！預計切換至: %s", groupName, formatNode(bestAlt))
+							
+							if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnFailover {
+								beeep.Notify("🚨 Rover 急救成功", fmt.Sprintf("已為您攔截斷線，群組 [%s] 切換至 %s", groupName, bestAlt), "")
+							}
+							
+							BroadcastRefresh()
 						} else {
 							logFailover("[%s] 找不到其他可用的備用節點！", groupName)
 						}

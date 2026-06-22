@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -44,7 +45,8 @@ type ProxiesResponse struct {
 }
 
 func (c *APIClient) GetProxyGroup(name string) (*ProxyGroup, error) {
-	req, err := http.NewRequest("GET", c.BaseURL+"/proxies", nil)
+	encodedName := url.PathEscape(name)
+	req, err := http.NewRequest("GET", c.BaseURL+"/proxies/"+encodedName, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -59,16 +61,12 @@ func (c *APIClient) GetProxyGroup(name string) (*ProxyGroup, error) {
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	var data ProxiesResponse
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	var group ProxyGroup
+	if err := json.NewDecoder(resp.Body).Decode(&group); err != nil {
 		return nil, err
 	}
 
-	if group, ok := data.Proxies[name]; ok {
-		return &group, nil
-	}
-
-	return nil, fmt.Errorf("proxy group %s not found", name)
+	return &group, nil
 }
 
 type DelayResponse struct {
@@ -111,8 +109,12 @@ func (c *APIClient) SelectProxy(groupName, proxyName string) error {
 	encodedGroup := url.PathEscape(groupName)
 	u := fmt.Sprintf("%s/proxies/%s", c.BaseURL, encodedGroup)
 
-	payload := fmt.Sprintf(`{"name": "%s"}`, proxyName)
-	req, err := http.NewRequest("PUT", u, strings.NewReader(payload))
+	payloadBytes, err := json.Marshal(map[string]string{"name": proxyName})
+	if err != nil {
+		return err
+	}
+	
+	req, err := http.NewRequest("PUT", u, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return err
 	}

@@ -322,7 +322,17 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	systemReports = append(systemReports, fmt.Sprintf("退避：共 %s 個節點連線失敗，目前處於退避期", formatVal(totalBackoff)))
 	systemReports = append(systemReports, fmt.Sprintf("測速：本次共 Ping 測試 %s 個節點", formatVal(len(nodesToTest))))
 
-	// 3. 為每個群組獨立計算最佳節點
+	// 3. 重新讀取 Clash 真實狀態（防止在 Ping 期間被 Failover 或手動切換）
+	for _, groupName := range r.GetConfig().TargetGroups {
+		freshGroup, err := r.api.GetProxyGroup(groupName)
+		if err == nil && freshGroup.Now != groupNowMap[groupName] {
+			logWarning("偵測到群組 [%s] 在 Ping 測試期間發生節點變更：%s → %s",
+				groupName, formatNode(groupNowMap[groupName]), formatNode(freshGroup.Now))
+			groupNowMap[groupName] = freshGroup.Now
+		}
+	}
+
+	// 4. 為每個群組獨立計算最佳節點
 	groupTargetNodes := make(map[string]string)
 	pendingSwitches := make(map[string]string)
 
@@ -391,11 +401,11 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
 			}
 		} else {
-			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 狀態：目前的節點 %s 依然是最佳選擇，無需切換", formatNode(targetNode)))
+			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 狀態：目前的節點 %s 依然是最佳選擇，無需切換", formatNode(currentNow)))
 		}
 	}
 
-	// 4. 反壟斷公平探索機制 (Monopoly Breaker) & 頻寬測速
+	// 5. 反壟斷公平探索機制 (Monopoly Breaker) & 頻寬測速
 	targetIntervalDuration := time.Duration(r.GetConfig().BandwidthTestInterval) * time.Minute
 	explorationDuration := time.Duration(r.GetConfig().ExplorationCooldown) * time.Minute
 
@@ -410,25 +420,29 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 
 		var bwTestCandidate string
-		highestBaseScore := -999999
-
-		for _, name := range nodes {
-			sc, ok := scores[name]
-			if !ok || sc.SuccessRate < 0.8 {
-				continue
-			}
-			if isManual || time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
-				if sc.BaseScore > highestBaseScore {
-					highestBaseScore = sc.BaseScore
-					bwTestCandidate = name
-				}
-			}
-		}
-
 		targetNode := groupTargetNodes[groupName]
-		if bwTestCandidate == "" && targetNode != "" {
-			if isManual || time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration {
-				bwTestCandidate = targetNode
+
+		// 優先檢查冠軍節點 (目標節點) 是否已過常規冷卻期 (例如 5 分鐘)
+		if targetNode != "" && (isManual || time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration) {
+			bwTestCandidate = targetNode
+		} else {
+			// 如果冠軍節點還在冷卻中，則把這次測速機會讓給「潛力股探索」 (冷卻期例如 60 分鐘)
+			highestBaseScore := -999999
+			for _, name := range nodes {
+				sc, ok := scores[name]
+				if !ok || sc.SuccessRate < 0.8 {
+					continue
+				}
+				// 排除掉目前的目標節點 (因為上面已經判斷過它還在冷卻中)
+				if name == targetNode {
+					continue
+				}
+				if isManual || time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
+					if sc.BaseScore > highestBaseScore {
+						highestBaseScore = sc.BaseScore
+						bwTestCandidate = name
+					}
+				}
 			}
 		}
 
@@ -480,7 +494,10 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		if err != nil {
 			logWarning("頻寬測試失敗或超時: %s (錯誤: %v)", formatNode(bwTestCandidate), err)
 			groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("💥 測速：頻寬測試失敗或超時 (原因: %v)", err))
-			r.db.InsertLog(bwTestCandidate, 9999, false)
+			// V3: 頻寬測試失敗插入 3 筆懲罰，防止分數快速恢復
+			for i := 0; i < 3; i++ {
+				r.db.InsertLog(bwTestCandidate, 9999, false)
+			}
 		} else {
 			mbps := (speedKBps / 1024.0)
 			consumedMB := float64(totalBytes) / (1024.0 * 1024.0)
@@ -540,15 +557,24 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 	}
 
-	// 5. 統一執行所有主要群組的最終節點切換
+	// 6. 統一執行所有主要群組的最終節點切換
 	successSwitches := 0
 	failSwitches := 0
 	if len(pendingSwitches) > 0 {
 		for groupName, targetNode := range pendingSwitches {
 			if err := r.api.SelectProxy(groupName, targetNode); err != nil {
 				failSwitches++
+				logError("群組 [%s] 切換至 %s 失敗: %v", groupName, formatNode(targetNode), err)
 			} else {
-				successSwitches++
+				// 驗證切換是否真的生效
+				verifyGroup, verifyErr := r.api.GetProxyGroup(groupName)
+				if verifyErr == nil && verifyGroup.Now != targetNode {
+					logError("⚠️ 切換驗證失敗：群組 [%s] 預期 %s 但 Clash 實際為 %s",
+						groupName, formatNode(targetNode), formatNode(verifyGroup.Now))
+					failSwitches++
+				} else {
+					successSwitches++
+				}
 			}
 		}
 		systemReports = append(systemReports, fmt.Sprintf("切換：成功切換 %d 個群組, 失敗 %d 個", successSwitches, failSwitches))
@@ -616,8 +642,10 @@ func (r *Rover) runFailoverWatchdog() {
 					if consecutiveFails[groupName] >= r.GetConfig().FailoverMaxFails {
 						logFailover("[%s] 節點 %s 已癱瘓！觸發秒級急救！", groupName, activeNode)
 						
-						// 寫入懲罰
-						r.db.InsertLog(activeNode, 9999, false)
+						// V3: 寫入 5 筆懲罰紀錄，使懲罰效果不會被快速稀釋
+						for i := 0; i < 5; i++ {
+							r.db.InsertLog(activeNode, 9999, false)
+						}
 						
 						// 找備胎
 						scores, _ := r.db.GetScores(r.GetConfig().HistoryDays)

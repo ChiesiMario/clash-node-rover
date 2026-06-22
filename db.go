@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"math"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -120,8 +121,10 @@ type NodeScore struct {
 	Score              int
 	BaseScore          int
 	SuccessRate        float64
+	AdjustedRate       float64
 	AvgDelay           float64
 	Jitter             int
+	SampleCount        int
 	AvgBandwidth       float64
 	TotalConsumedBytes int64
 	BrowserSuccessRate float64
@@ -130,68 +133,142 @@ type NodeScore struct {
 
 func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	cutoff := time.Now().AddDate(0, 0, -days).Unix()
-	query := `
-		SELECT 
-			p.node_name, 
-			COUNT(p.id) as total_tests,
-			SUM(CASE WHEN p.success THEN 1 ELSE 0 END) as success_tests,
-			AVG(CASE WHEN p.success THEN p.delay ELSE NULL END) as avg_delay,
-			MAX(CASE WHEN p.success THEN p.delay ELSE NULL END) - MIN(CASE WHEN p.success THEN p.delay ELSE NULL END) as jitter
-		FROM ping_logs p
-		WHERE p.timestamp >= ?
-		GROUP BY p.node_name
-	`
+	nowUnix := float64(time.Now().Unix())
 
-	rows, err := d.sqlDB.Query(query, cutoff)
+	// 半衰期 24 小時的指數衰減常數
+	lambda := math.Ln2 / (24.0 * 3600.0)
+
+	// ========================================
+	// 第一層：撈取所有 ping_logs 原始行，在 Go 端計算
+	// ========================================
+	pingQuery := `
+		SELECT node_name, timestamp, delay, success
+		FROM ping_logs
+		WHERE timestamp >= ?
+		ORDER BY node_name
+	`
+	pingRows, err := d.sqlDB.Query(pingQuery, cutoff)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer pingRows.Close()
+
+	// 每個節點的原始資料收集
+	type nodeRawData struct {
+		successWeightSum   float64
+		totalWeightSum     float64
+		delayWeightedSum   float64
+		delayWeightSum     float64
+		delays             []float64 // 成功的延遲值，用於計算標準差
+		delayWeights       []float64 // 對應的權重
+		totalCount         int
+		successCount       int
+	}
+
+	nodeData := make(map[string]*nodeRawData)
+
+	for pingRows.Next() {
+		var name string
+		var timestamp int64
+		var delay int
+		var success bool
+
+		if err := pingRows.Scan(&name, &timestamp, &delay, &success); err != nil {
+			log.Printf("掃描 ping_logs 發生錯誤: %v", err)
+			continue
+		}
+
+		nd, exists := nodeData[name]
+		if !exists {
+			nd = &nodeRawData{}
+			nodeData[name] = nd
+		}
+
+		// 計算時間衰減權重
+		ageSeconds := nowUnix - float64(timestamp)
+		weight := math.Exp(-lambda * ageSeconds)
+
+		nd.totalCount++
+		nd.totalWeightSum += weight
+
+		if success {
+			nd.successCount++
+			nd.successWeightSum += weight
+			nd.delayWeightedSum += float64(delay) * weight
+			nd.delayWeightSum += weight
+			nd.delays = append(nd.delays, float64(delay))
+			nd.delayWeights = append(nd.delayWeights, weight)
+		}
+	}
 
 	scores := make(map[string]NodeScore)
 
-	for rows.Next() {
-		var name string
-		var total, successCount int
-		var avgDelay sql.NullFloat64
-		var jitter sql.NullInt64
-
-		if err := rows.Scan(&name, &total, &successCount, &avgDelay, &jitter); err != nil {
-			log.Printf("掃描資料庫發生錯誤: %v", err)
+	for name, nd := range nodeData {
+		if nd.totalCount == 0 {
 			continue
 		}
 
-		if total == 0 {
-			continue
+		// 原始成功率（顯示用）
+		rawSuccessRate := float64(nd.successCount) / float64(nd.totalCount)
+
+		// Bayesian 修正成功率（計算用）：虛擬加入 2 成功 + 1 失敗
+		adjustedRate := float64(nd.successCount+2) / float64(nd.totalCount+3)
+
+		// 加權成功率（用於評分）
+		weightedSuccessRate := adjustedRate
+		if nd.totalWeightSum > 0 {
+			weightedSuccessRate = nd.successWeightSum / nd.totalWeightSum
+			// 將 Bayesian 修正也套用在加權版本上
+			if nd.totalCount < 10 {
+				// 樣本量小時，混合原始 Bayesian 修正與加權結果
+				blendFactor := float64(nd.totalCount) / 10.0
+				weightedSuccessRate = weightedSuccessRate*blendFactor + adjustedRate*(1-blendFactor)
+			}
 		}
 
-		successRate := float64(successCount) / float64(total)
-		delay := 9999.0
-		if avgDelay.Valid {
-			delay = avgDelay.Float64
+		// 加權平均延遲
+		avgDelay := 9999.0
+		if nd.delayWeightSum > 0 {
+			avgDelay = nd.delayWeightedSum / nd.delayWeightSum
 		}
 
-		// 公式： (成功率 * 10000) - (平均延遲) - (Jitter * 2)
-		j := 0
-		if jitter.Valid {
-			j = int(jitter.Int64)
+		// Jitter：加權標準差
+		jitter := 0
+		if len(nd.delays) > 1 && nd.delayWeightSum > 0 {
+			wMean := nd.delayWeightedSum / nd.delayWeightSum
+			var varianceSum float64
+			var wSum float64
+			for i, d := range nd.delays {
+				w := nd.delayWeights[i]
+				diff := d - wMean
+				varianceSum += w * diff * diff
+				wSum += w
+			}
+			if wSum > 0 {
+				jitter = int(math.Sqrt(varianceSum / wSum))
+			}
 		}
-		
-		score := int(successRate*10000) - int(delay) - (j * 2)
+
+		// V3 評分公式：(加權成功率 × 10000) − (加權平均延遲) − (Jitter標準差 × 2)
+		score := int(weightedSuccessRate*10000) - int(avgDelay) - (jitter * 2)
 
 		scores[name] = NodeScore{
 			Name:               name,
 			Score:              score,
 			BaseScore:          score,
-			SuccessRate:        successRate,
-			AvgDelay:           delay,
-			Jitter:             j,
+			SuccessRate:        rawSuccessRate,
+			AdjustedRate:       adjustedRate,
+			AvgDelay:           avgDelay,
+			Jitter:             jitter,
+			SampleCount:        nd.totalCount,
 			AvgBandwidth:       0.0,
 			TotalConsumedBytes: 0,
 		}
 	}
 
-	// 取得平均頻寬與總消耗流量
+	// ========================================
+	// 第二層：頻寬加分（對數遞減 + 硬性上限）
+	// ========================================
 	bwQuery := `
 		SELECT node_name, AVG(speed_kbps), SUM(downloaded_bytes) 
 		FROM bandwidth_logs 
@@ -209,9 +286,13 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 				if sc, exists := scores[name]; exists {
 					if avgBw.Valid {
 						sc.AvgBandwidth = avgBw.Float64
-						// Score Algorithm V2: 將下載速度加入質量分數計算
-						// 每 1 KB/s 增加 0.5 分 (等同於每 1 MB/s 增加約 500 分)
-						sc.Score += int(sc.AvgBandwidth / 2)
+						// Score Algorithm V3: 對數遞減，前 2 MB/s 加分最快，之後邊際遞減
+						// 上限 2000 分（約 4 MB/s 時趨近滿分）
+						bwBonus := int(math.Log2(1+sc.AvgBandwidth/1024.0) * 1000)
+						if bwBonus > 2000 {
+							bwBonus = 2000
+						}
+						sc.Score += bwBonus
 					}
 					if sumBytes.Valid {
 						sc.TotalConsumedBytes = sumBytes.Int64
@@ -222,7 +303,9 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 		}
 	}
 
-	// 取得瀏覽器測試結果
+	// ========================================
+	// 第三層：瀏覽器測試修正（連續懲罰函數）
+	// ========================================
 	brQuery := `
 		SELECT node_name, AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END), AVG(CASE WHEN success THEN load_time_ms ELSE NULL END)
 		FROM browser_logs 
@@ -234,21 +317,22 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 		defer brRows.Close()
 		for brRows.Next() {
 			var name string
-			var successRate sql.NullFloat64
+			var brSuccessRate sql.NullFloat64
 			var avgLoad sql.NullFloat64
-			if err := brRows.Scan(&name, &successRate, &avgLoad); err == nil {
+			if err := brRows.Scan(&name, &brSuccessRate, &avgLoad); err == nil {
 				if sc, exists := scores[name]; exists {
-					if successRate.Valid {
-						sc.BrowserSuccessRate = successRate.Float64
-						// 成功率太低則扣分
-						if successRate.Float64 < 0.5 {
-							sc.Score -= 1000
+					if brSuccessRate.Valid {
+						sc.BrowserSuccessRate = brSuccessRate.Float64
+						// V3: 連續懲罰函數 — 低於 80% 開始線性扣分，0% 扣滿 2000 分
+						if brSuccessRate.Float64 < 0.8 {
+							penalty := int((0.8 - brSuccessRate.Float64) * 2500)
+							sc.Score -= penalty
 						}
 					}
 					if avgLoad.Valid {
 						sc.AvgBrowserLoadTime = avgLoad.Float64
 						// 載入時間加分：越快分數越高。基準為 5 秒(5000ms)，每快 100ms 加 10 分
-						bonus := int(5000 - avgLoad.Float64) / 10
+						bonus := int(5000-avgLoad.Float64) / 10
 						if bonus > 0 {
 							sc.Score += bonus
 						}

@@ -565,7 +565,8 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                                 <th>Score</th>
                                 <th>Success</th>
                                 <th>Avg Ping</th>
-                                <th>Jitter</th>
+                                <th>Jitter (σ)</th>
+                                <th>Samples</th>
                                 <th>Avg Speed</th>
                                 <th>Data Used</th>
                                 <th>Web Success</th>
@@ -573,7 +574,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                             </tr>
                         </thead>
                         <tbody id="tbody">
-                            <tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
+                            <tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -641,7 +642,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const tbody = document.getElementById('tbody');
                 
                 if (!data || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;color:var(--text-muted);padding:40px;">目前沒有節點數據</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:40px;">目前沒有節點數據</td></tr>';
                     return;
                 }
 
@@ -676,9 +677,10 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     let providerTag = node.provider ? '<br><span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; display:inline-block; margin-top:4px;">🏢 ' + node.provider + '</span>' : '';
 
                     let jitterColor = '#94a3b8'; // text-muted
-                    if (node.Jitter > 300) {
+                    // V3: Jitter 現在是標準差，數值比 MAX-MIN 小很多，調整門檻
+                    if (node.Jitter > 150) {
                         jitterColor = 'var(--danger)';
-                    } else if (node.Jitter > 100) {
+                    } else if (node.Jitter > 50) {
                         jitterColor = 'var(--warning)';
                     }
 
@@ -692,12 +694,16 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                         }
                     }
 
+                    // V3: 顯示樣本數
+                    const sampleStr = node.SampleCount || 0;
+
                     tr.innerHTML = '<td class="rank ' + rankClass + '">#' + (index + 1) + '</td>' +
                         '<td style="font-weight: 600; color: #fff;">' + node.Name + providerTag + '</td>' +
                         '<td><span class="score-badge">' + node.Score + '</span></td>' +
                         '<td class="success-rate" style="color: ' + successColor + ';">' + (node.SuccessRate * 100).toFixed(1) + '%</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif;">' + node.AvgDelay.toFixed(0) + ' ms</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600; color: ' + jitterColor + ';">' + node.Jitter + ' ms</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif; color: var(--text-muted);">' + sampleStr + '</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif; font-weight: 500;">' + speedStr + '</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif;">' + consumedStr + '</td>' +
                         '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600;">' + webSuccessStr + '</td>' +
@@ -730,7 +736,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             chartRow = document.createElement('tr');
             chartRow.id = 'chart-row-' + index;
             chartRow.className = 'chart-row expanded-row';
-            chartRow.innerHTML = '<td colspan="10"><div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></td>';
+            chartRow.innerHTML = '<td colspan="11"><div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></td>';
             tr.parentNode.insertBefore(chartRow, tr.nextSibling);
 
             try {
@@ -738,7 +744,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const history = await res.json();
                 
                 if (!history || history.length === 0) {
-                    chartRow.innerHTML = '<td colspan="10" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
+                    chartRow.innerHTML = '<td colspan="11" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
                     return;
                 }
 

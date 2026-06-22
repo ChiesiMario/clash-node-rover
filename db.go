@@ -153,6 +153,9 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 				if sc, exists := scores[name]; exists {
 					if avgBw.Valid {
 						sc.AvgBandwidth = avgBw.Float64
+						// Score Algorithm V2: 將下載速度加入質量分數計算
+						// 每 1 KB/s 增加 0.5 分 (等同於每 1 MB/s 增加約 500 分)
+						sc.Score += int(sc.AvgBandwidth / 2)
 					}
 					if sumBytes.Valid {
 						sc.TotalConsumedBytes = sumBytes.Int64

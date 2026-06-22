@@ -20,6 +20,7 @@ type Rover struct {
 	
 	// 進階功能控制
 	ManualTrigger     chan struct{}
+	Quit              chan struct{}
 	IsRunning         bool
 }
 
@@ -32,6 +33,7 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		lastCheckTime:     make(map[string]time.Time),
 		lastBandwidthTest: make(map[string]time.Time),
 		ManualTrigger:     make(chan struct{}, 1),
+		Quit:              make(chan struct{}, 1),
 		IsRunning:         false,
 	}
 }
@@ -59,8 +61,15 @@ func (r *Rover) Start() {
 			ticker.Stop()
 			r.runCheckCycle()
 			ticker.Reset(r.cfg.CheckInterval)
+		case <-r.Quit:
+			log.Println("背景測速引擎已停止。")
+			return
 		}
 	}
+}
+
+func (r *Rover) Stop() {
+	r.Quit <- struct{}{}
 }
 
 func (r *Rover) runCheckCycle() {

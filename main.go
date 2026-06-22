@@ -2,6 +2,9 @@ package main
 
 import (
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
@@ -25,6 +28,22 @@ func main() {
 	// 啟動 Web 儀表板
 	go StartWebServer(db, rover, cfg.WebPort)
 
-	// 防止主程式退出
-	select {}
+	// 優雅關機機制 (Graceful Shutdown)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("\n⚠️ 接收到關閉信號，正在安全關閉 Clash Node Rover...")
+	
+	// 停止核心引擎
+	rover.Stop()
+	
+	// 安全關閉資料庫連線
+	if err := db.Close(); err != nil {
+		log.Printf("❌ 資料庫關閉時發生錯誤: %v\n", err)
+	} else {
+		log.Println("✅ 資料庫已安全關閉。")
+	}
+	
+	log.Println("👋 程式已安全退出，感謝使用！")
 }

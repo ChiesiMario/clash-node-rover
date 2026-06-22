@@ -166,6 +166,38 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	return scores, nil
 }
 
+type PingLog struct {
+	Timestamp int64
+	Delay     int
+}
+
+func (d *DB) GetNodeHistory(nodeName string, hours int) ([]PingLog, error) {
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
+	
+	query := `
+		SELECT timestamp, delay 
+		FROM ping_logs 
+		WHERE node_name = ? AND timestamp >= ? AND success = 1
+		ORDER BY timestamp ASC
+	`
+	
+	rows, err := d.sqlDB.Query(query, nodeName, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []PingLog
+	for rows.Next() {
+		var log PingLog
+		if err := rows.Scan(&log.Timestamp, &log.Delay); err == nil {
+			history = append(history, log)
+		}
+	}
+	
+	return history, nil
+}
+
 func (d *DB) Close() error {
 	return d.sqlDB.Close()
 }

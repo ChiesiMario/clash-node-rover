@@ -10,20 +10,29 @@ import (
 )
 
 type Rover struct {
-	cfg           *Config
-	api           *APIClient
-	db            *DB
-	failedConsec  map[string]int
-	lastCheckTime map[string]time.Time
+	cfg               *Config
+	api               *APIClient
+	db                *DB
+	consecutiveFailed int
+	failedConsec      map[string]int
+	lastCheckTime     map[string]time.Time
+	lastBandwidthTest map[string]time.Time
+	
+	// 進階功能控制
+	ManualTrigger     chan struct{}
+	IsRunning         bool
 }
 
 func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 	return &Rover{
-		cfg:           cfg,
-		api:           api,
-		db:            db,
-		failedConsec:  make(map[string]int),
-		lastCheckTime: make(map[string]time.Time),
+		cfg:               cfg,
+		api:               api,
+		db:                db,
+		failedConsec:      make(map[string]int),
+		lastCheckTime:     make(map[string]time.Time),
+		lastBandwidthTest: make(map[string]time.Time),
+		ManualTrigger:     make(chan struct{}, 1),
+		IsRunning:         false,
 	}
 }
 
@@ -34,20 +43,35 @@ func (r *Rover) pickRandomURL() string {
 	return r.cfg.TestURLs[rand.Intn(len(r.cfg.TestURLs))]
 }
 
-func (r *Rover) Run() {
-	log.Printf("開始監控 Node Rover，目標群組 '%s'，每 %v 檢查一次", r.cfg.TargetGroup, r.cfg.CheckInterval)
+func (r *Rover) Start() {
+	log.Println("Clash Node Rover 啟動...")
+	r.runCheckCycle() // 啟動時先跑一次
+
 	ticker := time.NewTicker(r.cfg.CheckInterval)
 	defer ticker.Stop()
 
-	r.checkAndSwitch()
-
-	for range ticker.C {
-		r.checkAndSwitch()
+	for {
+		select {
+		case <-ticker.C:
+			r.runCheckCycle()
+		case <-r.ManualTrigger:
+			log.Println("收到手動測速信號，立即執行！")
+			ticker.Stop()
+			r.runCheckCycle()
+			ticker.Reset(r.cfg.CheckInterval)
+		}
 	}
 }
 
-func (r *Rover) checkAndSwitch() {
-	log.Println("--- 檢查節點 ---")
+func (r *Rover) runCheckCycle() {
+	if r.IsRunning {
+		return
+	}
+	r.IsRunning = true
+	defer func() { r.IsRunning = false }()
+
+	log.Println("----------------------------------------")
+	log.Println("開始新一輪節點測試...")
 
 	if err := r.db.CleanOldLogs(r.cfg.HistoryDays); err != nil {
 		log.Printf("清理舊日誌失敗: %v", err)
@@ -217,23 +241,36 @@ func (r *Rover) checkAndSwitch() {
 		log.Printf("目前的節點 [%s] 依然是最佳選擇。", group.Now)
 	}
 
-	// 頻寬測試 (針對當下使用的節點)
-	log.Printf("對當下節點 [%s] 進行頻寬測試...", group.Now)
-	speedKBps, totalBytes, err := r.api.TestBandwidth(r.cfg.BandwidthTestURL, r.cfg.ClashProxyURL, 15*time.Second)
-	if err != nil {
-		log.Printf("頻寬測試失敗: %v", err)
-		// 懲罰機制：寫入一筆極大延遲的失敗紀錄
-		r.db.InsertLog(targetNode, 9999, false)
-	} else {
-		log.Printf("頻寬測試完成: %.2f KB/s", speedKBps)
-		r.db.InsertBandwidthLog(targetNode, speedKBps, totalBytes)
-		
-		if speedKBps < r.cfg.BandwidthThresholdKbps {
-			log.Printf("警告: 節點 [%s] 頻寬低於閾值 (%.0f KB/s)，寫入劣跡懲罰", targetNode, r.cfg.BandwidthThresholdKbps)
-			r.db.InsertLog(targetNode, 9999, false)
+	// 4. 測速結束後，如果當前有選中的節點，進行真實頻寬測試 (下載測試)
+	if targetNode != "" {
+		lastTested := r.lastBandwidthTest[targetNode]
+		intervalDuration := time.Duration(r.cfg.BandwidthTestInterval) * time.Minute
+
+		if time.Since(lastTested) < intervalDuration {
+			log.Printf("目標節點 [%s] 距離上次頻寬測速未滿 %d 分鐘，跳過下載測試以節省流量。", targetNode, r.cfg.BandwidthTestInterval)
 		} else {
-			// 速度達標，給予獎勵紀錄
-			r.db.InsertLog(targetNode, int(1000/speedKBps), true) // 用速度換算一個低延遲作為獎勵
+			log.Printf("選定目標節點: [%s]，準備進行真實頻寬測試...", targetNode)
+			r.lastBandwidthTest[targetNode] = time.Now()
+			
+			// 透過 Clash proxy 進行下載測試
+			speedKBps, totalBytes, err := r.api.TestBandwidth(r.cfg.BandwidthTestURL, r.cfg.ClashProxyURL, 15*time.Second)
+			
+			if err != nil {
+				log.Printf("頻寬測試失敗: %v", err)
+				// 懲罰機制：寫入一筆極大延遲的失敗紀錄
+				r.db.InsertLog(targetNode, 9999, false)
+			} else {
+				log.Printf("頻寬測試完成: %.2f KB/s", speedKBps)
+				r.db.InsertBandwidthLog(targetNode, speedKBps, totalBytes)
+				
+				if speedKBps < r.cfg.BandwidthThresholdKbps {
+					log.Printf("警告: 節點 [%s] 頻寬低於閾值 (%.0f KB/s)，寫入劣跡懲罰", targetNode, r.cfg.BandwidthThresholdKbps)
+					r.db.InsertLog(targetNode, 9999, false)
+				} else {
+					// 速度達標，給予獎勵紀錄
+					r.db.InsertLog(targetNode, int(1000/speedKBps), true) // 用速度換算一個低延遲作為獎勵
+				}
+			}
 		}
 	}
 }

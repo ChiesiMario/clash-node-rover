@@ -24,6 +24,7 @@ type Config struct {
 	ClashProxyURL          string        `json:"clash_proxy_url"`
 	BandwidthTestURL       string        `json:"bandwidth_test_url"`
 	BandwidthThresholdKbps float64       `json:"bandwidth_threshold_kbps"`
+	BandwidthTestInterval  int           `json:"bandwidth_test_interval"` // minutes
 	MaxBackoffMinutes      int           `json:"max_backoff_minutes"`
 }
 
@@ -74,6 +75,9 @@ func loadConfig() (*Config, error) {
 	}
 	if cfg.BandwidthThresholdKbps <= 0 {
 		cfg.BandwidthThresholdKbps = 500
+	}
+	if cfg.BandwidthTestInterval <= 0 {
+		cfg.BandwidthTestInterval = 60
 	}
 	if cfg.MaxBackoffMinutes <= 0 {
 		cfg.MaxBackoffMinutes = 30

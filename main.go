@@ -16,11 +16,12 @@ func main() {
 	}
 	defer db.Close()
 
-	webServer := NewWebServer(cfg, db)
-	go webServer.Start()
-
 	api := NewAPIClient(cfg.APIUrl, cfg.APISecret)
 	rover := NewRover(cfg, api, db)
 
-	rover.Run()
+	// 啟動 Web 儀表板
+	go StartWebServer(db, rover, cfg.WebPort)
+
+	// 防止主程式退出
+	select {}
 }

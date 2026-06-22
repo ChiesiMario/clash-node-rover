@@ -8,29 +8,129 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	APIUrl                 string        `json:"api_url"`
-	APISecret              string        `json:"api_secret"`
-	CheckInterval          time.Duration `json:"check_interval"`
-	TargetGroup            string        `json:"target_group"`
-	TestURLs               []string      `json:"test_urls"`
-	TestTimeout            time.Duration `json:"test_timeout"`
-	DelayTolerance         int           `json:"delay_tolerance"` // milliseconds
-	HistoryDays            int           `json:"history_days"`    // days
-	MaxConcurrent          int           `json:"max_concurrent"`
-	WebPort                int           `json:"web_port"`
-	ClashProxyURL          string        `json:"clash_proxy_url"`
-	BandwidthTestURL       string        `json:"bandwidth_test_url"`
-	BandwidthThresholdKbps float64       `json:"bandwidth_threshold_kbps"`
-	BandwidthTestInterval  int           `json:"bandwidth_test_interval"` // minutes
-	MaxBackoffMinutes      int           `json:"max_backoff_minutes"`
+	APIUrl                 string        `yaml:"api_url"`
+	APISecret              string        `yaml:"api_secret"`
+	CheckInterval          time.Duration `yaml:"check_interval"`
+	TargetGroup            string        `yaml:"target_group"`
+	TestURLs               []string      `yaml:"test_urls"`
+	TestTimeout            time.Duration `yaml:"test_timeout"`
+	DelayTolerance         int           `yaml:"delay_tolerance"` // milliseconds
+	HistoryDays            int           `yaml:"history_days"`    // days
+	MaxConcurrent          int           `yaml:"max_concurrent"`
+	WebPort                int           `yaml:"web_port"`
+	ClashProxyURL          string        `yaml:"clash_proxy_url"`
+	BandwidthTestURL       string        `yaml:"bandwidth_test_url"`
+	BandwidthThresholdKbps float64       `yaml:"bandwidth_threshold_kbps"`
+	BandwidthTestInterval  int           `yaml:"bandwidth_test_interval"` // minutes
+	ExplorationCooldown    int           `yaml:"exploration_cooldown_minutes"` // minutes
+	MaxBackoffMinutes      int           `yaml:"max_backoff_minutes"`
 }
 
-const ConfigFile = "rover_config.json"
+const ConfigFile = "rover_config.yaml"
+const OldConfigFile = "rover_config.json"
+
+const defaultYAMLTemplate = `# Clash Node Rover 設定檔
+
+# Clash 外部控制 API 的網址，通常為 http://127.0.0.1:9090
+api_url: "%s"
+
+# Clash API 的密碼 (secret)，如果沒有設定請留空
+api_secret: "%s"
+
+# 背景檢查與測速的間隔時間 (例如 60s, 1m, 5m)
+check_interval: %ds
+
+# 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (例如 PROXY 或 🤖 Node Rover)
+target_group: "%s"
+
+# 用來進行 Ping 測試的目標網址列表，會隨機抽取一個進行測試
+test_urls:
+  - "http://www.gstatic.com/generate_204"
+  - "http://cp.cloudflare.com/generate_204"
+  - "http://www.apple.com/library/test/success.html"
+
+# Ping 測試的超時時間
+test_timeout: 5s
+
+# 延遲容忍度 (毫秒)。只有當新節點的延遲比目前節點快超過此數值時，才會進行切換
+delay_tolerance: 100
+
+# 歷史紀錄保留天數 (用於計算品質分數與網頁折線圖)
+history_days: 7
+
+# 最大併發測速數量 (數字越大測速越快，但可能短暫佔用系統資源)
+max_concurrent: 10
+
+# Web 儀表板的監聽埠
+web_port: 9091
+
+# Clash 的 HTTP 代理網址 (用於真實下載測速)
+clash_proxy_url: "http://127.0.0.1:7890"
+
+# 真實頻寬測速用的下載檔案網址 (建議使用測速專用檔案)
+bandwidth_test_url: "http://speedtest.tele2.net/1MB.zip"
+
+# 真實頻寬測速的及格線 (KB/s)。低於此速度的節點會受到品質分數懲罰
+bandwidth_threshold_kbps: 500
+
+# 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
+bandwidth_test_interval: 60
+
+# 潛力節點面試 (探索) 的獨立冷卻時間 (分鐘)。
+# 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點
+exploration_cooldown_minutes: 60
+
+# 發生連線錯誤時的退避冷卻上限 (分鐘)。失敗越多次，冷卻越久，最高不超過此數值
+max_backoff_minutes: 30
+`
+
+func writeYAMLConfig(cfg *Config) error {
+	yamlStr := fmt.Sprintf(defaultYAMLTemplate,
+		cfg.APIUrl,
+		cfg.APISecret,
+		int(cfg.CheckInterval.Seconds()),
+		cfg.TargetGroup,
+	)
+	return os.WriteFile(ConfigFile, []byte(yamlStr), 0644)
+}
 
 func loadConfig() (*Config, error) {
+	// 檢查是否有舊的 JSON 設定檔，如果有，則讀取並升級成 YAML
+	if _, err := os.Stat(OldConfigFile); err == nil {
+		fmt.Println("發現舊版 rover_config.json，正在為您升級為 YAML 格式...")
+		data, err := os.ReadFile(OldConfigFile)
+		if err == nil {
+			var cfg Config
+			// 為了相容 JSON 欄位，我們暫時用一個匿名的 struct 來解析舊格式
+			var oldCfg struct {
+				APIUrl                 string        `json:"api_url"`
+				APISecret              string        `json:"api_secret"`
+				CheckInterval          time.Duration `json:"check_interval"`
+				TargetGroup            string        `json:"target_group"`
+			}
+			json.Unmarshal(data, &oldCfg)
+			
+			cfg.APIUrl = oldCfg.APIUrl
+			if cfg.APIUrl == "" { cfg.APIUrl = "http://127.0.0.1:9090" }
+			cfg.APISecret = oldCfg.APISecret
+			cfg.CheckInterval = oldCfg.CheckInterval
+			if cfg.CheckInterval == 0 { cfg.CheckInterval = 60 * time.Second }
+			cfg.TargetGroup = oldCfg.TargetGroup
+			if cfg.TargetGroup == "" { cfg.TargetGroup = "🤖 Node Rover" }
+			
+			// 寫入帶有註解的 YAML
+			writeYAMLConfig(&cfg)
+			// 刪除舊檔案
+			os.Rename(OldConfigFile, OldConfigFile+".bak")
+			fmt.Println("設定檔已成功升級為 rover_config.yaml！")
+		}
+	}
+
 	data, err := os.ReadFile(ConfigFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -40,7 +140,7 @@ func loadConfig() (*Config, error) {
 	}
 
 	var cfg Config
-	err = json.Unmarshal(data, &cfg)
+	err = yaml.Unmarshal(data, &cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -79,14 +179,11 @@ func loadConfig() (*Config, error) {
 	if cfg.BandwidthTestInterval <= 0 {
 		cfg.BandwidthTestInterval = 60
 	}
+	if cfg.ExplorationCooldown <= 0 {
+		cfg.ExplorationCooldown = 60
+	}
 	if cfg.MaxBackoffMinutes <= 0 {
 		cfg.MaxBackoffMinutes = 30
-	}
-
-	// 自動將補齊預設值後的完整設定寫回檔案，方便用戶直接編輯
-	updatedData, err := json.MarshalIndent(cfg, "", "  ")
-	if err == nil {
-		os.WriteFile(ConfigFile, updatedData, 0644)
 	}
 
 	return &cfg, nil
@@ -133,17 +230,14 @@ func promptForConfig() (*Config, error) {
 		ClashProxyURL:          "http://127.0.0.1:7890",
 		BandwidthTestURL:       "http://speedtest.tele2.net/1MB.zip",
 		BandwidthThresholdKbps: 500.0,
+		ExplorationCooldown:    60,
 		MaxBackoffMinutes:      30,
 	}
 
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
+	if err := writeYAMLConfig(cfg); err != nil {
 		return nil, err
 	}
-
-	if err := os.WriteFile(ConfigFile, data, 0644); err != nil {
-		return nil, err
-	}
+	
 	fmt.Println("設定已儲存至", ConfigFile)
 
 	return cfg, nil

@@ -75,6 +75,7 @@ func (d *DB) CleanOldLogs(days int) error {
 type NodeScore struct {
 	Name               string
 	Score              int
+	BaseScore          int
 	SuccessRate        float64
 	AvgDelay           float64
 	AvgBandwidth       float64
@@ -128,6 +129,7 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 		scores[name] = NodeScore{
 			Name:               name,
 			Score:              score,
+			BaseScore:          score,
 			SuccessRate:        successRate,
 			AvgDelay:           delay,
 			AvgBandwidth:       0.0,

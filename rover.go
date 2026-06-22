@@ -250,16 +250,49 @@ func (r *Rover) runCheckCycle() {
 		log.Printf("目前的節點 [%s] 依然是最佳選擇。", group.Now)
 	}
 
-	// 4. 測速結束後，如果當前有選中的節點，進行真實頻寬測試 (下載測試)
-	if targetNode != "" {
-		lastTested := r.lastBandwidthTest[targetNode]
-		intervalDuration := time.Duration(r.cfg.BandwidthTestInterval) * time.Minute
+	// 4. 反壟斷公平探索機制 (Monopoly Breaker)
+	// 尋找「成功率高、BaseScore 高，且不在測速冷卻期內」的潛力節點進行頻寬測試
+	var bwTestCandidate string
+	highestBaseScore := -999999
+	targetIntervalDuration := time.Duration(r.cfg.BandwidthTestInterval) * time.Minute
+	explorationDuration := time.Duration(r.cfg.ExplorationCooldown) * time.Minute
 
-		if time.Since(lastTested) < intervalDuration {
-			log.Printf("目標節點 [%s] 距離上次頻寬測速未滿 %d 分鐘，跳過下載測試以節省流量。", targetNode, r.cfg.BandwidthTestInterval)
+	// 確保至少取得最新的分數資訊來判斷
+	scores, _ = r.db.GetScores(r.cfg.HistoryDays)
+
+	for name, sc := range scores {
+		// 只面試「優等生」：成功率至少 80%，避免切換後連線中斷
+		if sc.SuccessRate < 0.8 {
+			continue
+		}
+		// 必須已過探索冷卻期
+		if time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
+			if sc.BaseScore > highestBaseScore {
+				highestBaseScore = sc.BaseScore
+				bwTestCandidate = name
+			}
+		}
+	}
+
+	// 如果所有好節點都在冷卻期，但 targetNode 尚未測速過 (例如剛開機)，就測 targetNode
+	if bwTestCandidate == "" && targetNode != "" && time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration {
+		bwTestCandidate = targetNode
+	}
+
+		if bwTestCandidate != "" {
+		if bwTestCandidate != targetNode && targetNode != "" {
+			log.Printf("💡 觸發反壟斷探索機制：切暫時換至潛力節點 [%s] 進行測速 (BaseScore: %d)", bwTestCandidate, highestBaseScore)
+			err := r.api.SelectProxy(r.cfg.TargetGroup, bwTestCandidate)
+			if err != nil {
+				log.Printf("無法切換至候選節點: %v", err)
+				bwTestCandidate = "" // 取消本次面試
+			}
 		} else {
-			log.Printf("選定目標節點: [%s]，準備進行真實頻寬測試...", targetNode)
-			r.lastBandwidthTest[targetNode] = time.Now()
+			log.Printf("選定目標節點: [%s]，準備進行真實頻寬測試...", bwTestCandidate)
+		}
+
+		if bwTestCandidate != "" {
+			r.lastBandwidthTest[bwTestCandidate] = time.Now()
 			
 			// 透過 Clash proxy 進行下載測試
 			speedKBps, totalBytes, err := r.api.TestBandwidth(r.cfg.BandwidthTestURL, r.cfg.ClashProxyURL, 15*time.Second)
@@ -267,19 +300,27 @@ func (r *Rover) runCheckCycle() {
 			if err != nil {
 				log.Printf("頻寬測試失敗: %v", err)
 				// 懲罰機制：寫入一筆極大延遲的失敗紀錄
-				r.db.InsertLog(targetNode, 9999, false)
+				r.db.InsertLog(bwTestCandidate, 9999, false)
 			} else {
 				log.Printf("頻寬測試完成: %.2f KB/s", speedKBps)
-				r.db.InsertBandwidthLog(targetNode, speedKBps, totalBytes)
+				r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
 				
 				if speedKBps < r.cfg.BandwidthThresholdKbps {
-					log.Printf("警告: 節點 [%s] 頻寬低於閾值 (%.0f KB/s)，寫入劣跡懲罰", targetNode, r.cfg.BandwidthThresholdKbps)
-					r.db.InsertLog(targetNode, 9999, false)
+					log.Printf("警告: 節點 [%s] 頻寬低於閾值 (%.0f KB/s)，寫入劣跡懲罰", bwTestCandidate, r.cfg.BandwidthThresholdKbps)
+					r.db.InsertLog(bwTestCandidate, 9999, false)
 				} else {
 					// 速度達標，給予獎勵紀錄
-					r.db.InsertLog(targetNode, int(1000/speedKBps), true) // 用速度換算一個低延遲作為獎勵
+					r.db.InsertLog(bwTestCandidate, int(1000/speedKBps), true) // 用速度換算一個低延遲作為獎勵
 				}
 			}
+
+			// 如果有切換過代理，記得切回冠軍節點
+			if bwTestCandidate != targetNode && targetNode != "" {
+				log.Printf("探索測速完成，將代理切回最佳節點 [%s]", targetNode)
+				r.api.SelectProxy(r.cfg.TargetGroup, targetNode)
+			}
 		}
+	} else if targetNode != "" {
+		log.Printf("目前所有優質節點皆在頻寬測速冷卻期 (%d 分鐘) 內，跳過下載測試以節省流量。", r.cfg.BandwidthTestInterval)
 	}
 }

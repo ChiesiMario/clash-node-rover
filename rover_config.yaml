@@ -1,0 +1,53 @@
+# Clash Node Rover 設定檔
+
+# Clash 外部控制 API 的網址，通常為 http://127.0.0.1:9090
+api_url: "http://127.0.0.1:9090"
+
+# Clash API 的密碼 (secret)，如果沒有設定請留空
+api_secret: ""
+
+# 背景檢查與測速的間隔時間 (例如 60s, 1m, 5m)
+check_interval: 60s
+
+# 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (例如 PROXY 或 🤖 Node Rover)
+target_group: "🤖 Node Rover"
+
+# 用來進行 Ping 測試的目標網址列表，會隨機抽取一個進行測試
+test_urls:
+  - "http://www.gstatic.com/generate_204"
+  - "http://cp.cloudflare.com/generate_204"
+  - "http://www.apple.com/library/test/success.html"
+
+# Ping 測試的超時時間
+test_timeout: 5s
+
+# 延遲容忍度 (毫秒)。只有當新節點的延遲比目前節點快超過此數值時，才會進行切換
+delay_tolerance: 100
+
+# 歷史紀錄保留天數 (用於計算品質分數與網頁折線圖)
+history_days: 7
+
+# 最大併發測速數量 (數字越大測速越快，但可能短暫佔用系統資源)
+max_concurrent: 10
+
+# Web 儀表板的監聽埠
+web_port: 9091
+
+# Clash 的 HTTP 代理網址 (用於真實下載測速)
+clash_proxy_url: "http://127.0.0.1:7890"
+
+# 真實頻寬測速用的下載檔案網址 (建議使用測速專用檔案)
+bandwidth_test_url: "http://speedtest.tele2.net/1MB.zip"
+
+# 真實頻寬測速的及格線 (KB/s)。低於此速度的節點會受到品質分數懲罰
+bandwidth_threshold_kbps: 500
+
+# 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
+bandwidth_test_interval: 5
+
+# 潛力節點面試 (探索) 的獨立冷卻時間 (分鐘)。
+# 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點
+exploration_cooldown_minutes: 60
+
+# 發生連線錯誤時的退避冷卻上限 (分鐘)。失敗越多次，冷卻越久，最高不超過此數值
+max_backoff_minutes: 30

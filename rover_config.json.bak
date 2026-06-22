@@ -1,0 +1,20 @@
+{
+  "api_url": "http://127.0.0.1:9090",
+  "api_secret": "",
+  "check_interval": 60000000000,
+  "target_group": "🤖 Node Rover",
+  "test_urls": [
+    "http://www.gstatic.com/generate_204",
+    "http://cp.cloudflare.com/generate_204"
+  ],
+  "test_timeout": 5000000000,
+  "delay_tolerance": 100,
+  "history_days": 7,
+  "max_concurrent": 10,
+  "web_port": 9091,
+  "clash_proxy_url": "http://127.0.0.1:7890",
+  "bandwidth_test_url": "http://speedtest.tele2.net/1MB.zip",
+  "bandwidth_threshold_kbps": 500,
+  "bandwidth_test_interval": 5,
+  "max_backoff_minutes": 30
+}

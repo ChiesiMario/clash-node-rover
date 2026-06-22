@@ -24,6 +24,7 @@ type Rover struct {
 	failedConsec      map[string]int
 	lastCheckTime     map[string]time.Time
 	lastBandwidthTest map[string]time.Time
+	lastInterviewTime map[string]time.Time
 	
 	// 進階功能控制
 	ManualTrigger     chan struct{}
@@ -39,6 +40,7 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		failedConsec:      make(map[string]int),
 		lastCheckTime:     make(map[string]time.Time),
 		lastBandwidthTest: make(map[string]time.Time),
+		lastInterviewTime: make(map[string]time.Time),
 		ManualTrigger:     make(chan struct{}, 1),
 		Quit:              make(chan struct{}, 1),
 		IsRunning:         false,
@@ -419,141 +421,150 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			continue
 		}
 
-		var bwTestCandidate string
 		targetNode := groupTargetNodes[groupName]
+		var candidatesToTest []string
 
-		// 優先檢查冠軍節點 (目標節點) 是否已過常規冷卻期 (例如 5 分鐘)
-		if targetNode != "" && (isManual || time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration) {
-			bwTestCandidate = targetNode
-		} else {
-			// 如果冠軍節點還在冷卻中，則把這次測速機會讓給「潛力股探索」 (冷卻期例如 60 分鐘)
-			highestBaseScore := -999999
-			for _, name := range nodes {
-				sc, ok := scores[name]
-				if !ok || sc.SuccessRate < 0.8 {
+		// 必定加入「當前選擇節點 (Target Node)」
+		if targetNode != "" {
+			candidatesToTest = append(candidatesToTest, targetNode)
+		}
+
+		// 尋找一位「面試節點 (Exploration Node)」
+		explorationCandidate := ""
+		highestBaseScore := -999999
+		for _, name := range nodes {
+			sc, ok := scores[name]
+			if !ok || sc.SuccessRate < 0.8 {
+				continue
+			}
+			// 排除掉已經在名單內的 Target Node
+			if name == targetNode {
+				continue
+			}
+			// 檢查面試冷卻期
+			if isManual || time.Since(r.lastInterviewTime[name]) >= explorationDuration {
+				if sc.BaseScore > highestBaseScore {
+					highestBaseScore = sc.BaseScore
+					explorationCandidate = name
+				}
+			}
+		}
+
+		if explorationCandidate != "" {
+			candidatesToTest = append(candidatesToTest, explorationCandidate)
+		}
+
+		if len(candidatesToTest) == 0 {
+			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("⏳ 測速：無節點可測"))
+			continue
+		}
+
+		// 針對 candidatesToTest 中的每一個候選人進行測試
+		for _, candidate := range candidatesToTest {
+			if alreadyTestedInCycle[candidate] {
+				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("⏭️ 測速：本週期已測過 %s，跳過重複測試", formatNode(candidate)))
+				continue
+			}
+
+			// 準備測速 (借用群組)
+			var borrowGroup string
+			var originalTarget string
+
+			if r.GetConfig().DedicatedTestGroup != "" {
+				borrowGroup = r.GetConfig().DedicatedTestGroup
+				if g, err := r.api.GetProxyGroup(borrowGroup); err == nil {
+					originalTarget = g.Now
+				}
+			} else {
+				borrowGroup = groupName
+				originalTarget = groupNowMap[groupName]
+			}
+
+			isExploration := (candidate != targetNode)
+			tag := ""
+			if isExploration {
+				tag = " (面試)"
+			} else {
+				tag = " (在位)"
+			}
+
+			if candidate != originalTarget {
+				err := r.api.SelectProxy(borrowGroup, candidate)
+				if err != nil {
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("測速：無法切換至測試節點 %s", formatNode(candidate)))
 					continue
 				}
-				// 排除掉目前的目標節點 (因為上面已經判斷過它還在冷卻中)
-				if name == targetNode {
-					continue
+			}
+
+			r.lastInterviewTime[candidate] = time.Now()
+			alreadyTestedInCycle[candidate] = true
+			
+			// 1. 執行極限頻寬測速 (受 bandwidth_test_interval 限制)
+			if isManual || time.Since(r.lastBandwidthTest[candidate]) >= targetIntervalDuration {
+				logInfo("開始對節點 %s%s 進行極限頻寬測試...", formatNode(candidate), tag)
+				
+				r.lastBandwidthTest[candidate] = time.Now()
+				speedKBps, totalBytes, err := r.api.TestBandwidth(r.GetConfig().BandwidthTestURL, r.GetConfig().ClashProxyURL, 15*time.Second)
+				
+				if err != nil {
+					logWarning("頻寬測試失敗或超時: %s (錯誤: %v)", formatNode(candidate), err)
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("💥 下載%s：失敗或超時", tag))
+					// V3: 頻寬測試失敗插入 3 筆懲罰，防止分數快速恢復
+					for i := 0; i < 3; i++ {
+						r.db.InsertLog(candidate, 9999, false)
+					}
+				} else {
+					mbps := (speedKBps / 1024.0)
+					consumedMB := float64(totalBytes) / (1024.0 * 1024.0)
+					logSuccess("頻寬測試完成: %s 下載達 %s MB/s (共消耗 %s MB)", formatNode(candidate), formatVal(fmt.Sprintf("%.2f", mbps)), formatVal(fmt.Sprintf("%.1f", consumedMB)))
+					groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("📈 下載%s：%s MB/s", tag, formatVal(fmt.Sprintf("%.2f", mbps))))
+					r.db.InsertBandwidthLog(candidate, speedKBps, totalBytes)
 				}
-				if isManual || time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
-					if sc.BaseScore > highestBaseScore {
-						highestBaseScore = sc.BaseScore
-						bwTestCandidate = name
+			} else {
+				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("⏳ 下載%s：冷卻中，跳過", tag))
+			}
+
+			// 2. 無頭瀏覽器網頁開啟測試 (只要被選中就一定會測)
+			if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
+				logInfo("開始使用無頭瀏覽器測試網頁連通性: %s%s...", formatNode(candidate), tag)
+				
+				for _, targetURL := range r.GetConfig().BrowserTestURLs {
+					opts := append(chromedp.DefaultExecAllocatorOptions[:],
+						chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
+					)
+					
+					allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
+					ctx, cancelCtx := chromedp.NewContext(allocCtx)
+					
+					ctx, cancelTimeout := context.WithTimeout(ctx, 15*time.Second)
+					
+					startTime := time.Now()
+					err := chromedp.Run(ctx,
+						chromedp.Navigate(targetURL),
+						chromedp.WaitReady("body", chromedp.ByQuery),
+					)
+					loadTimeMs := int(time.Since(startTime).Milliseconds())
+					
+					cancelTimeout()
+					cancelCtx()
+					cancelAlloc()
+					
+					if err != nil {
+						logWarning("網頁開啟失敗: %s (目標: %s, 錯誤: %v)", formatNode(candidate), targetURL, err)
+						groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 網頁%s：開啟 %s 失敗", tag, targetURL))
+						r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
+					} else {
+						logSuccess("網頁成功開啟: %s (目標: %s, 耗時 %d ms)", formatNode(candidate), targetURL, loadTimeMs)
+						groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 網頁%s：成功開啟 %s (%d ms)", tag, targetURL, loadTimeMs))
+						r.db.InsertBrowserLog(candidate, targetURL, true, loadTimeMs)
 					}
 				}
 			}
-		}
 
-		if bwTestCandidate == "" {
-			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("⏳ 測速：無 (所有優質節點皆在冷卻期內)"))
-			continue
-		}
-
-		if alreadyTestedInCycle[bwTestCandidate] {
-			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("⏭️ 測速：本週期已測速過，跳過重複測試"))
-			continue
-		}
-
-		// 準備測速
-		var borrowGroup string
-		var originalTarget string
-
-		if r.GetConfig().DedicatedTestGroup != "" {
-			borrowGroup = r.GetConfig().DedicatedTestGroup
-			if g, err := r.api.GetProxyGroup(borrowGroup); err == nil {
-				originalTarget = g.Now
+			// 切回原本的節點
+			if candidate != originalTarget && originalTarget != "" {
+				r.api.SelectProxy(borrowGroup, originalTarget)
 			}
-		} else {
-			borrowGroup = groupName
-			originalTarget = groupNowMap[groupName]
-		}
-
-		isExploration := (bwTestCandidate != originalTarget)
-
-		if isExploration {
-			err := r.api.SelectProxy(borrowGroup, bwTestCandidate)
-			if err != nil {
-				groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("測速：無法切換至探索節點 %s", formatNode(bwTestCandidate)))
-				continue
-			}
-		}
-
-		r.lastBandwidthTest[bwTestCandidate] = time.Now()
-		alreadyTestedInCycle[bwTestCandidate] = true
-		
-		if isExploration {
-			logInfo("開始對潛力節點 %s 進行 15 秒極限頻寬測試 (目標 URL: %s)...", formatNode(bwTestCandidate), r.GetConfig().BandwidthTestURL)
-		} else {
-			logInfo("開始對目前冠軍節點 %s 進行常規頻寬測試 (目標 URL: %s)...", formatNode(bwTestCandidate), r.GetConfig().BandwidthTestURL)
-		}
-
-		speedKBps, totalBytes, err := r.api.TestBandwidth(r.GetConfig().BandwidthTestURL, r.GetConfig().ClashProxyURL, 15*time.Second)
-		
-		if err != nil {
-			logWarning("頻寬測試失敗或超時: %s (錯誤: %v)", formatNode(bwTestCandidate), err)
-			groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("💥 測速：頻寬測試失敗或超時 (原因: %v)", err))
-			// V3: 頻寬測試失敗插入 3 筆懲罰，防止分數快速恢復
-			for i := 0; i < 3; i++ {
-				r.db.InsertLog(bwTestCandidate, 9999, false)
-			}
-		} else {
-			mbps := (speedKBps / 1024.0)
-			consumedMB := float64(totalBytes) / (1024.0 * 1024.0)
-			tag := ""
-			if isExploration {
-				tag = colorInfo.Sprint(" (反壟斷探索)")
-			}
-			logSuccess("頻寬測試完成: %s 下載達 %s MB/s (共消耗 %s MB)", formatNode(bwTestCandidate), formatVal(fmt.Sprintf("%.2f", mbps)), formatVal(fmt.Sprintf("%.1f", consumedMB)))
-			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("📈 測速：下載達 %s MB/s%s", formatVal(fmt.Sprintf("%.2f", mbps)), tag))
-			r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
-		}
-
-		// ----------------------------------------------------
-		// 無頭瀏覽器網頁開啟測試
-		// ----------------------------------------------------
-		if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
-			logInfo("開始使用無頭瀏覽器測試網頁連通性: %s (共 %d 個目標)...", formatNode(bwTestCandidate), len(r.GetConfig().BrowserTestURLs))
-			
-			for _, targetURL := range r.GetConfig().BrowserTestURLs {
-				// 設定 Chromedp 的 Proxy 參數
-				opts := append(chromedp.DefaultExecAllocatorOptions[:],
-					chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
-				)
-				
-				allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
-				ctx, cancelCtx := chromedp.NewContext(allocCtx)
-				
-				// 設定超時
-				ctx, cancelTimeout := context.WithTimeout(ctx, 15*time.Second)
-				
-				startTime := time.Now()
-				err := chromedp.Run(ctx,
-					chromedp.Navigate(targetURL),
-					chromedp.WaitReady("body", chromedp.ByQuery),
-				)
-				loadTimeMs := int(time.Since(startTime).Milliseconds())
-				
-				cancelTimeout()
-				cancelCtx()
-				cancelAlloc()
-				
-				if err != nil {
-					logWarning("網頁開啟失敗: %s (目標: %s, 錯誤: %v)", formatNode(bwTestCandidate), targetURL, err)
-					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 網頁：開啟 %s 失敗", targetURL))
-					r.db.InsertBrowserLog(bwTestCandidate, targetURL, false, loadTimeMs)
-				} else {
-					logSuccess("網頁成功開啟: %s (目標: %s, 耗時 %d ms)", formatNode(bwTestCandidate), targetURL, loadTimeMs)
-					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 網頁：成功開啟 %s (耗時 %d ms)", targetURL, loadTimeMs))
-					r.db.InsertBrowserLog(bwTestCandidate, targetURL, true, loadTimeMs)
-				}
-			}
-		}
-
-		// 切回原本的冠軍節點
-		if isExploration && originalTarget != "" {
-			r.api.SelectProxy(borrowGroup, originalTarget)
 		}
 	}
 

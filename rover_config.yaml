@@ -51,7 +51,7 @@ bandwidth_test_url: "https://speed.cloudflare.com/__down?bytes=52428800"
 bandwidth_threshold_kbps: 500
 
 # 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
-bandwidth_test_interval: 60
+bandwidth_test_interval: 180
 
 # 潛力節點面試 (探索) 的獨立冷卻時間 (分鐘)。
 # 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點

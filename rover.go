@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
@@ -33,7 +34,7 @@ type Rover struct {
 }
 
 func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
-	return &Rover{
+	r := &Rover{
 		cfg:               cfg,
 		api:               api,
 		db:                db,
@@ -44,6 +45,26 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		ManualTrigger:     make(chan struct{}, 1),
 		Quit:              make(chan struct{}, 1),
 		IsRunning:         false,
+	}
+	r.loadState()
+	return r
+}
+
+func (r *Rover) loadState() {
+	if bwStr, _ := r.db.GetMetadata("last_bandwidth_test"); bwStr != "" {
+		json.Unmarshal([]byte(bwStr), &r.lastBandwidthTest)
+	}
+	if intStr, _ := r.db.GetMetadata("last_interview_time"); intStr != "" {
+		json.Unmarshal([]byte(intStr), &r.lastInterviewTime)
+	}
+}
+
+func (r *Rover) saveState() {
+	if bwJson, err := json.Marshal(r.lastBandwidthTest); err == nil {
+		r.db.SetMetadata("last_bandwidth_test", string(bwJson))
+	}
+	if intJson, err := json.Marshal(r.lastInterviewTime); err == nil {
+		r.db.SetMetadata("last_interview_time", string(intJson))
 	}
 }
 
@@ -174,6 +195,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	}
 	r.IsRunning = true
 	defer func() { 
+		r.saveState()
 		r.IsRunning = false 
 		logReportEnd()
 		BroadcastRefresh()

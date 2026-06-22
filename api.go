@@ -77,7 +77,6 @@ type DelayResponse struct {
 }
 
 func (c *APIClient) TestProxyDelay(proxyName, testUrl string, timeout time.Duration) (int, error) {
-	// API: /proxies/{name}/delay?timeout=5000&url=...
 	encodedName := url.PathEscape(proxyName)
 	u := fmt.Sprintf("%s/proxies/%s/delay?timeout=%d&url=%s", c.BaseURL, encodedName, timeout.Milliseconds(), url.QueryEscape(testUrl))
 
@@ -130,4 +129,60 @@ func (c *APIClient) SelectProxy(groupName, proxyName string) error {
 	}
 
 	return nil
+}
+
+func (api *APIClient) TestBandwidth(testURL string, proxyURL string, timeout time.Duration) (float64, int64, error) {
+	parsedProxy, err := url.Parse(proxyURL)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	transport := &http.Transport{
+		Proxy: http.ProxyURL(parsedProxy),
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   timeout,
+	}
+
+	req, err := http.NewRequest("GET", testURL, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	req.Header.Set("User-Agent", "ClashNodeRover/1.0")
+
+	startTime := time.Now()
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return 0, 0, fmt.Errorf("HTTP error: %d", resp.StatusCode)
+	}
+
+	var totalBytes int64
+	buf := make([]byte, 32*1024)
+
+	for {
+		if time.Since(startTime) >= timeout {
+			break
+		}
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			totalBytes += int64(n)
+		}
+		if err != nil {
+			break
+		}
+	}
+
+	duration := time.Since(startTime).Seconds()
+	if duration <= 0 {
+		return 0, totalBytes, nil
+	}
+
+	kbps := (float64(totalBytes) / 1024.0) / duration
+	return kbps, totalBytes, nil
 }

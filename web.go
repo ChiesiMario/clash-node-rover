@@ -30,6 +30,21 @@ func BroadcastRefresh() {
 	}
 }
 
+func BroadcastSingleLog(entry WebLogEntry) {
+	wsClientsMutex.Lock()
+	defer wsClientsMutex.Unlock()
+	msg := map[string]interface{}{
+		"type":  "log",
+		"entry": entry,
+	}
+	for client := range wsClients {
+		if err := client.WriteJSON(msg); err != nil {
+			client.Close()
+			delete(wsClients, client)
+		}
+	}
+}
+
 func StartWebServer(db *DB, rover *Rover, port int) {
 	http.HandleFunc("/", handleIndex)
 
@@ -127,6 +142,17 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 		wsClientsMutex.Lock()
 		wsClients[conn] = true
 		wsClientsMutex.Unlock()
+
+		// Send log history to new client
+		logHistoryMutex.Lock()
+		historyCopy := make([]WebLogEntry, len(logHistory))
+		copy(historyCopy, logHistory)
+		logHistoryMutex.Unlock()
+		
+		conn.WriteJSON(map[string]interface{}{
+			"type":    "log_history",
+			"history": historyCopy,
+		})
 
 		// 讓連線保持開啟直到斷線
 		go func() {
@@ -400,6 +426,109 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             display: inline-block;
             animation: spin 2s linear infinite;
         }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-light);
+            padding-bottom: 12px;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: var(--text-muted);
+            border: none;
+            padding: 8px 16px;
+            font-size: 1.1rem;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-main);
+        }
+
+        .tab-btn.active {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--primary);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Terminal Logs */
+        .terminal-container {
+            margin-top: 2rem;
+            background: var(--bg-base);
+            border: 1px solid var(--border-light);
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .terminal-header {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 10px 16px;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-light);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .terminal-body {
+            height: calc(100vh - 250px);
+            min-height: 400px;
+            overflow-y: auto;
+            padding: 16px;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: #d1d5db;
+        }
+
+        .terminal-body::-webkit-scrollbar {
+            width: 8px;
+        }
+        .terminal-body::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+        }
+
+        .log-line {
+            margin-bottom: 4px;
+            word-wrap: break-word;
+        }
+
+        .log-time { color: #6b7280; margin-right: 8px; }
+        .log-level-info { color: #3b82f6; }
+        .log-level-success { color: #10b981; }
+        .log-level-warning { color: #f59e0b; }
+        .log-level-error { color: #ef4444; font-weight: bold; }
+        .log-level-header { color: #c084fc; font-weight: bold; }
+        .log-level-muted { color: #6b7280; }
+        .log-level-tree { color: #9ca3af; }
+        .log-level-group { color: #60a5fa; font-weight: bold; margin-top: 8px; }
     </style>
 </head>
 <body>
@@ -411,39 +540,70 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             </button>
         </div>
 
-        <div id="groupsGrid" class="groups-grid">
-            <!-- Group Cards Injected Here -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchTab('dashboard')" id="btn-dashboard">📊 儀表板</button>
+            <button class="tab-btn" onclick="switchTab('logs')" id="btn-logs">📝 系統日誌</button>
         </div>
 
-        <div class="glass-panel leaderboard">
-            <div class="leaderboard-header">
-                <h2 class="leaderboard-title">節點質量排行榜</h2>
-                <div style="color: var(--text-muted);">全球節點綜合評分。點擊節點可展開 24 小時延遲趨勢圖。</div>
+        <div id="tab-dashboard" class="tab-content active">
+            <div id="groupsGrid" class="groups-grid">
+                <!-- Group Cards Injected Here -->
             </div>
-            
-            <div style="overflow-x: auto;">
-                <table id="statsTable">
-                    <thead>
-                        <tr>
-                            <th>Rank</th>
-                            <th>Node Name</th>
-                            <th>Score</th>
-                            <th>Success</th>
-                            <th>Avg Ping</th>
-                            <th>Jitter</th>
-                            <th>Avg Speed</th>
-                            <th>Data Used</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tbody">
-                        <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
-                    </tbody>
-                </table>
+
+            <div class="glass-panel leaderboard">
+                <div class="leaderboard-header">
+                    <h2 class="leaderboard-title">節點質量排行榜</h2>
+                    <div style="color: var(--text-muted);">全球節點綜合評分。點擊節點可展開 24 小時延遲趨勢圖。</div>
+                </div>
+                
+                <div style="overflow-x: auto;">
+                    <table id="statsTable">
+                        <thead>
+                            <tr>
+                                <th>Rank</th>
+                                <th>Node Name</th>
+                                <th>Score</th>
+                                <th>Success</th>
+                                <th>Avg Ping</th>
+                                <th>Jitter</th>
+                                <th>Avg Speed</th>
+                                <th>Data Used</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tbody">
+                            <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div id="tab-logs" class="tab-content">
+            <div class="terminal-container" style="margin-top: 0;">
+                <div class="terminal-header">
+                    <span style="color: var(--success); font-size: 1.2rem;">&bull;</span> 系統即時日誌 (Live Terminal)
+                </div>
+                <div id="terminalBody" class="terminal-body">
+                    <!-- Logs injected here -->
+                </div>
             </div>
         </div>
     </div>
 
     <script>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            
+            document.getElementById('tab-' + tabId).classList.add('active');
+            document.getElementById('btn-' + tabId).classList.add('active');
+
+            if (tabId === 'logs') {
+                const term = document.getElementById('terminalBody');
+                term.scrollTop = term.scrollHeight;
+            }
+        }
+
         let chartInstances = {};
 
         async function fetchGroups() {
@@ -691,6 +851,14 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                         fetchGroups();
                         fetchStats();
                         checkStatus();
+                    } else if (msg.type === 'log') {
+                        appendLog(msg.entry);
+                    } else if (msg.type === 'log_history') {
+                        const term = document.getElementById('terminalBody');
+                        term.innerHTML = '';
+                        if (msg.history) {
+                            msg.history.forEach(entry => appendLog(entry));
+                        }
                     }
                 } catch(e) {}
             };
@@ -698,6 +866,37 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             ws.onclose = function() {
                 setTimeout(connectWebSocket, 3000); // Reconnect on close
             };
+        }
+
+        function appendLog(entry) {
+            const term = document.getElementById('terminalBody');
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            
+            let colorClass = 'log-level-info';
+            if (entry.level) {
+                colorClass = 'log-level-' + entry.level;
+            }
+
+            div.innerHTML = '<span class="log-time">[' + entry.time + ']</span> <span class="' + colorClass + '">' + escapeHtml(entry.message) + '</span>';
+            term.appendChild(div);
+
+            // Auto scroll to bottom
+            term.scrollTop = term.scrollHeight;
+
+            // Keep only last 200 elements in DOM
+            while (term.children.length > 200) {
+                term.removeChild(term.firstChild);
+            }
+        }
+
+        function escapeHtml(unsafe) {
+            return unsafe
+                 .replace(/&/g, "&amp;")
+                 .replace(/</g, "&lt;")
+                 .replace(/>/g, "&gt;")
+                 .replace(/"/g, "&quot;")
+                 .replace(/'/g, "&#039;");
         }
 
         connectWebSocket();

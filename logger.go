@@ -22,45 +22,82 @@ var (
 	colorValue   = color.New(color.FgHiGreen)
 )
 
+type WebLogEntry struct {
+	Level   string `json:"level"`
+	Message string `json:"message"`
+	Time    string `json:"time"`
+}
+
+var (
+	logHistory      = make([]WebLogEntry, 0, 50)
+	logHistoryMutex sync.Mutex
+)
+
+func broadcastWebLog(level, msg string) {
+	entry := WebLogEntry{
+		Level:   level,
+		Message: msg,
+		Time:    time.Now().Format("15:04:05"),
+	}
+
+	logHistoryMutex.Lock()
+	if len(logHistory) >= 50 {
+		logHistory = logHistory[1:]
+	}
+	logHistory = append(logHistory, entry)
+	logHistoryMutex.Unlock()
+
+	BroadcastSingleLog(entry)
+}
+
 func logHeader(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	fmt.Fprintln(color.Output)
 	log.Print(colorHeader.Sprintf("========== %s ==========", msg))
+	broadcastWebLog("header", fmt.Sprintf("========== %s ==========", msg))
 }
 
 func logInfo(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	log.Print(colorInfo.Sprint("💡 ") + msg)
+	broadcastWebLog("info", "💡 "+msg)
 }
 
 func logSuccess(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	log.Print(colorSuccess.Sprint("✅ ") + msg)
+	broadcastWebLog("success", "✅ "+msg)
 }
 
 func logWarning(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	log.Print(colorWarning.Sprint("⚠️ ") + msg)
+	broadcastWebLog("warning", "⚠️ "+msg)
 }
 
 func logError(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	log.Print(colorError.Sprint("❌ ") + msg)
+	broadcastWebLog("error", "❌ "+msg)
 }
 
 func logFailover(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	log.Print(colorFailover.Sprintf(" 🚨 急救機制 ") + " " + colorError.Sprintf(msg))
+	broadcastWebLog("error", "🚨 [急救機制] "+msg)
 }
 
 func logMuted(format string, a ...interface{}) {
-	log.Print(colorMuted.Sprintf(format, a...))
+	msg := fmt.Sprintf(format, a...)
+	log.Print(colorMuted.Sprintf(msg))
+	broadcastWebLog("muted", msg)
 }
 
 func logGroup(group, format string, a ...interface{}) {
 	prefix := colorGroup.Sprintf("[%s] ", group)
 	msg := fmt.Sprintf(format, a...)
 	log.Print(prefix + msg)
+	broadcastWebLog("info", fmt.Sprintf("[%s] %s", group, msg))
 }
 
 var (
@@ -96,16 +133,19 @@ func logReportStart() {
 	timeStr := time.Now().Format("15:04:05")
 	fmt.Fprintln(color.Output)
 	fmt.Fprintln(color.Output, colorHeader.Sprintf("========== 週期測速報告 (%s) ==========", timeStr))
+	broadcastWebLog("header", fmt.Sprintf("========== 週期測速報告 (%s) ==========", timeStr))
 }
 
 func logReportEnd() {
 	fmt.Fprintln(color.Output, colorHeader.Sprint("======================================================="))
 	fmt.Fprintln(color.Output)
+	broadcastWebLog("header", "=======================================================")
 }
 
 func logGroupTitle(group string) {
 	fmt.Fprintln(color.Output)
 	fmt.Fprintln(color.Output, colorGroup.Sprintf("[%s]", group))
+	broadcastWebLog("group", fmt.Sprintf("[%s]", group))
 }
 
 func logTreeItem(isLast bool, format string, a ...interface{}) {
@@ -115,4 +155,5 @@ func logTreeItem(isLast bool, format string, a ...interface{}) {
 		prefix = "  └─ "
 	}
 	fmt.Fprintln(color.Output, colorMuted.Sprint(prefix)+msg)
+	broadcastWebLog("tree", prefix+msg)
 }

@@ -69,9 +69,9 @@ dedicated_test_group: ""
 
 # 用來進行 Ping 測試的目標網址列表，會隨機抽取一個進行測試
 test_urls:
-  - "http://www.gstatic.com/generate_204"
-  - "http://cp.cloudflare.com/generate_204"
-  - "http://www.apple.com/library/test/success.html"
+  - "https://www.gstatic.com/generate_204"
+  - "https://cp.cloudflare.com/generate_204"
+  - "https://www.apple.com/library/test/success.html"
 
 # Ping 測試的超時時間
 test_timeout: 5s
@@ -94,8 +94,8 @@ web_port: 9091
 # Clash 的 HTTP 代理網址 (用於真實下載測速)
 clash_proxy_url: "http://127.0.0.1:7890"
 
-# 真實頻寬測速用的下載檔案網址 (建議使用測速專用檔案)
-bandwidth_test_url: "http://speedtest.tele2.net/1MB.zip"
+# 真實頻寬測速用的下載檔案網址 (建議使用支援 HTTPS 的高頻寬測速專用檔案)
+bandwidth_test_url: "https://speed.cloudflare.com/__down?bytes=10485760"
 
 # 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
 bandwidth_test_interval: 60

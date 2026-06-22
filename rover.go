@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -95,7 +96,7 @@ func (r *Rover) Start() {
 		logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
 	}
 
-	r.runCheckCycle() // 啟動時先跑一次
+	r.runCheckCycle(false) // 啟動時先跑一次
 
 	if r.GetConfig().EnableFailover {
 		go r.runFailoverWatchdog()
@@ -111,7 +112,7 @@ func (r *Rover) Start() {
 	for {
 		select {
 		case <-ticker.C:
-			r.runCheckCycle()
+			r.runCheckCycle(false)
 		case <-cleanupTicker.C:
 			if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
 				logError("資料庫自動瘦身失敗: %v", err)
@@ -121,7 +122,7 @@ func (r *Rover) Start() {
 		case <-r.ManualTrigger:
 			logInfo("收到手動測速信號，立即執行！")
 			ticker.Stop()
-			r.runCheckCycle()
+			r.runCheckCycle(true)
 			ticker.Reset(r.GetConfig().CheckInterval)
 		case <-r.Quit:
 			logWarning("背景測速引擎已停止。")
@@ -147,7 +148,7 @@ type nodeStat struct {
 	Err   error
 }
 
-func (r *Rover) runCheckCycle() {
+func (r *Rover) runCheckCycle(isManual bool) {
 	if r.IsRunning {
 		return
 	}
@@ -227,6 +228,12 @@ func (r *Rover) runCheckCycle() {
 			workerCount = len(nodesToTest)
 		}
 
+		var urlSample string
+		if len(r.GetConfig().TestURLs) > 0 {
+			urlSample = r.GetConfig().TestURLs[0]
+		}
+		logInfo("開始並發 Ping 測試 %s 個節點 (目標: %s..., 超時: %v)...", formatVal(len(nodesToTest)), urlSample, r.GetConfig().TestTimeout)
+
 		// 啟動 Worker Pool
 		for w := 0; w < workerCount; w++ {
 			wg.Add(1)
@@ -251,15 +258,39 @@ func (r *Rover) runCheckCycle() {
 			close(stats)
 		}()
 
+		successCount := 0
+		failCount := 0
+		var successfulStats []nodeStat
 		for s := range stats {
 			statResultsMap[s.Name] = s
 			success := (s.Err == nil && s.Delay > 0)
 			if success {
 				r.failedConsec[s.Name] = 0
+				successCount++
+				successfulStats = append(successfulStats, s)
 			} else {
 				r.failedConsec[s.Name]++
+				failCount++
+				if s.Err != nil {
+					logMuted("  - ❌ [失敗] %s: %v", formatNode(s.Name), s.Err)
+				} else {
+					logMuted("  - ❌ [失敗] %s: 延遲為 0 或未知錯誤", formatNode(s.Name))
+				}
 			}
 			r.db.InsertLog(s.Name, s.Delay, success)
+		}
+		logSuccess("Ping 測試完成！有效節點: %s, 失敗/超時: %s", formatVal(successCount), formatVal(failCount))
+
+		sort.Slice(successfulStats, func(i, j int) bool {
+			return successfulStats[i].Delay < successfulStats[j].Delay
+		})
+		for i, s := range successfulStats {
+			if i < 5 {
+				logMuted("  - ✅ [成功] %s: %d ms", formatNode(s.Name), s.Delay)
+			}
+		}
+		if len(successfulStats) > 5 {
+			logMuted("  - ... 及其他 %d 個成功節點", len(successfulStats)-5)
 		}
 	}
 
@@ -319,30 +350,30 @@ func (r *Rover) runCheckCycle() {
 		targetNode := fastestNode
 		reason := colorInfo.Sprint("當前速度最快")
 
-		if highestScoreNode != "" {
+		if highestScoreNode != "" && highestScoreNode != fastestNode {
 			diff := highestScoreCurrentDelay - fastestDelay
 			if diff <= r.GetConfig().DelayTolerance {
 				targetNode = highestScoreNode
-				reason = colorSuccess.Sprintf("最高質量分，且與最快差距僅 %dms", diff)
+				reason = colorSuccess.Sprintf("質量分最高，且與最快差距僅 %dms", diff)
 			} else {
-				reason = colorWarning.Sprintf("最高分節點比最快慢 %dms，強制選最快", diff)
+				reason = colorWarning.Sprintf("高分節點比最快慢 %dms (超過容忍度)，因此退而求其次選最快", diff)
 			}
 		}
 
-		groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("決策：選擇 %s (%s)", formatNode(targetNode), reason))
+		groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("⚖️ 決策邏輯：%s", reason))
 		groupTargetNodes[groupName] = targetNode
 		
 		currentNow := groupNowMap[groupName]
 		if targetNode != currentNow && currentNow != "" {
-			groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("狀態：預計從 %s 切換至 %s", formatNode(currentNow), formatNode(targetNode)))
-			systemReports = append(systemReports, colorSuccess.Sprintf("切換：群組 [%s] 成功切換至 %s", groupName, formatNode(targetNode)))
+			groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("🔌 狀態：預計從 %s 切換至 %s", formatNode(currentNow), formatNode(targetNode)))
+			systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
 			pendingSwitches[groupName] = targetNode
 			
 			if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
 				beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
 			}
 		} else {
-			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("狀態：目前的節點 %s 依然是最佳選擇", formatNode(targetNode)))
+			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 狀態：目前的節點 %s 依然是最佳選擇，無需切換", formatNode(targetNode)))
 		}
 	}
 
@@ -368,7 +399,7 @@ func (r *Rover) runCheckCycle() {
 			if !ok || sc.SuccessRate < 0.8 {
 				continue
 			}
-			if time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
+			if isManual || time.Since(r.lastBandwidthTest[name]) >= explorationDuration {
 				if sc.BaseScore > highestBaseScore {
 					highestBaseScore = sc.BaseScore
 					bwTestCandidate = name
@@ -378,18 +409,18 @@ func (r *Rover) runCheckCycle() {
 
 		targetNode := groupTargetNodes[groupName]
 		if bwTestCandidate == "" && targetNode != "" {
-			if time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration {
+			if isManual || time.Since(r.lastBandwidthTest[targetNode]) >= targetIntervalDuration {
 				bwTestCandidate = targetNode
 			}
 		}
 
 		if bwTestCandidate == "" {
-			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("測速：無 (所有優質節點皆在冷卻期內)"))
+			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("⏳ 測速：無 (所有優質節點皆在冷卻期內)"))
 			continue
 		}
 
 		if alreadyTestedInCycle[bwTestCandidate] {
-			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("測速：本週期已測速過，跳過"))
+			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("⏭️ 測速：本週期已測速過，跳過重複測試"))
 			continue
 		}
 
@@ -420,18 +451,27 @@ func (r *Rover) runCheckCycle() {
 		r.lastBandwidthTest[bwTestCandidate] = time.Now()
 		alreadyTestedInCycle[bwTestCandidate] = true
 		
+		if isExploration {
+			logInfo("開始對潛力節點 %s 進行 15 秒極限頻寬測試 (目標 URL: %s)...", formatNode(bwTestCandidate), r.GetConfig().BandwidthTestURL)
+		} else {
+			logInfo("開始對目前冠軍節點 %s 進行常規頻寬測試 (目標 URL: %s)...", formatNode(bwTestCandidate), r.GetConfig().BandwidthTestURL)
+		}
+
 		speedKBps, totalBytes, err := r.api.TestBandwidth(r.GetConfig().BandwidthTestURL, r.GetConfig().ClashProxyURL, 15*time.Second)
 		
 		if err != nil {
-			groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("測速：%s 頻寬測試失敗", formatNode(bwTestCandidate)))
+			logWarning("頻寬測試失敗或超時: %s (錯誤: %v)", formatNode(bwTestCandidate), err)
+			groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("💥 測速：頻寬測試失敗或超時 (原因: %v)", err))
 			r.db.InsertLog(bwTestCandidate, 9999, false)
 		} else {
 			mbps := (speedKBps / 1024.0)
+			consumedMB := float64(totalBytes) / (1024.0 * 1024.0)
 			tag := ""
 			if isExploration {
 				tag = colorInfo.Sprint(" (反壟斷探索)")
 			}
-			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("測速：%s 下載達 %s MB/s%s", formatNode(bwTestCandidate), formatVal(fmt.Sprintf("%.2f", mbps)), tag))
+			logSuccess("頻寬測試完成: %s 下載達 %s MB/s (共消耗 %s MB)", formatNode(bwTestCandidate), formatVal(fmt.Sprintf("%.2f", mbps)), formatVal(fmt.Sprintf("%.1f", consumedMB)))
+			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("📈 測速：下載達 %s MB/s%s", formatVal(fmt.Sprintf("%.2f", mbps)), tag))
 			r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
 		}
 

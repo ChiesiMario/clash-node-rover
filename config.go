@@ -25,7 +25,6 @@ type Config struct {
 	WebPort                int           `yaml:"web_port"`
 	ClashProxyURL          string        `yaml:"clash_proxy_url"`
 	BandwidthTestURL       string        `yaml:"bandwidth_test_url"`
-	BandwidthThresholdKbps float64       `yaml:"bandwidth_threshold_kbps"`
 	BandwidthTestInterval  int           `yaml:"bandwidth_test_interval"` // minutes
 	ExplorationCooldown    int           `yaml:"exploration_cooldown_minutes"` // minutes
 	MaxBackoffMinutes      int           `yaml:"max_backoff_minutes"`
@@ -74,9 +73,6 @@ clash_proxy_url: "http://127.0.0.1:7890"
 
 # 真實頻寬測速用的下載檔案網址 (建議使用測速專用檔案)
 bandwidth_test_url: "http://speedtest.tele2.net/1MB.zip"
-
-# 真實頻寬測速的及格線 (KB/s)。低於此速度的節點會受到品質分數懲罰
-bandwidth_threshold_kbps: 500
 
 # 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
 bandwidth_test_interval: 60
@@ -173,9 +169,6 @@ func loadConfig() (*Config, error) {
 	if cfg.BandwidthTestURL == "" {
 		cfg.BandwidthTestURL = "http://speedtest.tele2.net/1MB.zip"
 	}
-	if cfg.BandwidthThresholdKbps <= 0 {
-		cfg.BandwidthThresholdKbps = 500
-	}
 	if cfg.BandwidthTestInterval <= 0 {
 		cfg.BandwidthTestInterval = 60
 	}
@@ -229,7 +222,6 @@ func promptForConfig() (*Config, error) {
 		WebPort:                9091,
 		ClashProxyURL:          "http://127.0.0.1:7890",
 		BandwidthTestURL:       "http://speedtest.tele2.net/1MB.zip",
-		BandwidthThresholdKbps: 500.0,
 		ExplorationCooldown:    60,
 		MaxBackoffMinutes:      30,
 	}

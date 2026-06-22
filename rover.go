@@ -299,19 +299,11 @@ func (r *Rover) runCheckCycle() {
 			
 			if err != nil {
 				log.Printf("頻寬測試失敗: %v", err)
-				// 懲罰機制：寫入一筆極大延遲的失敗紀錄
+				// 真實的連線異常或 HTTP 錯誤，才視為失敗並寫入 Ping 紀錄
 				r.db.InsertLog(bwTestCandidate, 9999, false)
 			} else {
 				log.Printf("頻寬測試完成: %.2f KB/s", speedKBps)
 				r.db.InsertBandwidthLog(bwTestCandidate, speedKBps, totalBytes)
-				
-				if speedKBps < r.cfg.BandwidthThresholdKbps {
-					log.Printf("警告: 節點 [%s] 頻寬低於閾值 (%.0f KB/s)，寫入劣跡懲罰", bwTestCandidate, r.cfg.BandwidthThresholdKbps)
-					r.db.InsertLog(bwTestCandidate, 9999, false)
-				} else {
-					// 速度達標，給予獎勵紀錄
-					r.db.InsertLog(bwTestCandidate, int(1000/speedKBps), true) // 用速度換算一個低延遲作為獎勵
-				}
 			}
 
 			// 如果有切換過代理，記得切回冠軍節點

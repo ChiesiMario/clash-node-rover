@@ -134,6 +134,13 @@ func (r *Rover) Stop() {
 	r.Quit <- struct{}{}
 }
 
+func (r *Rover) ForceCheck() {
+	select {
+	case r.ManualTrigger <- struct{}{}:
+	default:
+	}
+}
+
 type nodeStat struct {
 	Name  string
 	Delay int

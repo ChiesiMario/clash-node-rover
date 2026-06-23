@@ -26,9 +26,9 @@ type Config struct {
 	DedicatedTestGroup    string        `yaml:"dedicated_test_group"`
 	TestURLs              []string      `yaml:"test_urls"`
 	TestTimeout           time.Duration `yaml:"test_timeout"`
-	DelayTolerance        int           `yaml:"delay_tolerance"` // milliseconds
-	HistoryDays           int           `yaml:"history_days"`    // days
-	CleanupDays           int           `yaml:"cleanup_days"`    // days
+	BrowserToleranceMs    int           `yaml:"browser_tolerance_ms"` // milliseconds
+	HistoryDays           int           `yaml:"history_days"`         // days
+	CleanupDays           int           `yaml:"cleanup_days"`         // days
 	MaxConcurrent         int           `yaml:"max_concurrent"`
 	WebPort               int           `yaml:"web_port"`
 	ClashProxyURL         string        `yaml:"clash_proxy_url"`
@@ -79,8 +79,8 @@ test_urls:
 # Ping 測試的超時時間
 test_timeout: 5s
 
-# 延遲容忍度 (毫秒)。只有當新節點的延遲比目前節點快超過此數值時，才會進行切換
-delay_tolerance: 100
+# 網頁載入速度容忍度 (毫秒)。只有當新節點的網頁開啟速度比目前節點快超過此數值時，才會進行切換
+browser_tolerance_ms: 500
 
 # 歷史紀錄保留天數 (用於計算品質分數與網頁折線圖)
 history_days: 7
@@ -211,8 +211,8 @@ func loadConfig() (*Config, error) {
 	if cfg.TestTimeout <= 0 {
 		cfg.TestTimeout = 5 * time.Second
 	}
-	if cfg.DelayTolerance <= 0 {
-		cfg.DelayTolerance = 100
+	if cfg.BrowserToleranceMs <= 0 {
+		cfg.BrowserToleranceMs = 500
 	}
 	if cfg.HistoryDays <= 0 {
 		cfg.HistoryDays = 7
@@ -306,7 +306,7 @@ func promptForConfig() (*Config, error) {
 		TargetGroups:        []string{"🤖 Node Rover"},
 		TestURLs:            []string{"http://www.gstatic.com/generate_204", "http://cp.cloudflare.com/generate_204", "http://www.apple.com/library/test/success.html"},
 		TestTimeout:         5 * time.Second,
-		DelayTolerance:      100,
+		BrowserToleranceMs:  500,
 		HistoryDays:         7,
 		CleanupDays:         7,
 		MaxConcurrent:       10,

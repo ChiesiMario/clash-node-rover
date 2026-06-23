@@ -464,11 +464,11 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 
 		fastestNode := ""
-		fastestDelay := math.MaxInt32
+		fastestBrowserLoad := math.MaxFloat64
 
 		highestScoreNode := ""
 		highestScore := math.MinInt32
-		highestScoreCurrentDelay := 0
+		highestScoreBrowserLoad := 0.0
 
 		for _, name := range nodes {
 			s, tested := statResultsMap[name]
@@ -476,16 +476,26 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				continue
 			}
 
-			if s.Delay > 0 && s.Delay < fastestDelay {
-				fastestDelay = s.Delay
+			scoreData, okScore := scores[s.Name]
+			
+			// 計算網頁開啟預估時間
+			var browserLoad float64
+			if okScore && scoreData.AvgBrowserLoadTime > 0 {
+				browserLoad = scoreData.AvgBrowserLoadTime
+			} else {
+				// 尚未測試過網頁的節點，使用當前 Ping * 10 作為暫代值，避免永遠選不上
+				browserLoad = float64(s.Delay * 10)
+			}
+
+			if browserLoad < fastestBrowserLoad {
+				fastestBrowserLoad = browserLoad
 				fastestNode = s.Name
 			}
 
-			scoreData, okScore := scores[s.Name]
 			if okScore && scoreData.Score > highestScore {
 				highestScore = scoreData.Score
 				highestScoreNode = s.Name
-				highestScoreCurrentDelay = s.Delay
+				highestScoreBrowserLoad = browserLoad
 			}
 		}
 
@@ -496,15 +506,15 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 
 		targetNode := fastestNode
-		reason := colorInfo.Sprint("當前速度最快")
+		reason := colorInfo.Sprint("網頁開啟速度最快")
 
 		if highestScoreNode != "" && highestScoreNode != fastestNode {
-			diff := highestScoreCurrentDelay - fastestDelay
-			if diff <= r.GetConfig().DelayTolerance {
+			diff := highestScoreBrowserLoad - fastestBrowserLoad
+			if diff <= float64(r.GetConfig().BrowserToleranceMs) {
 				targetNode = highestScoreNode
-				reason = colorSuccess.Sprintf("質量分最高，且與最快差距僅 %dms", diff)
+				reason = colorSuccess.Sprintf("質量分最高，且網頁開啟與最快差距僅 %d ms", int(diff))
 			} else {
-				reason = colorWarning.Sprintf("高分節點比最快慢 %dms (超過容忍度)，因此退而求其次選最快", diff)
+				reason = colorWarning.Sprintf("高分節點網頁較慢 (落後 %d ms 超過容忍度)，因此選網頁最快節點", int(diff))
 			}
 		}
 

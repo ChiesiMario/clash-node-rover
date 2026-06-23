@@ -129,6 +129,10 @@ type NodeScore struct {
 	TotalConsumedBytes int64
 	BrowserSuccessRate float64
 	AvgBrowserLoadTime float64
+	BrowserTested      bool
+	LastPingTime       int64
+	LastBandwidthTime  int64
+	LastBrowserTime    int64
 }
 
 func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
@@ -163,6 +167,7 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 		delayWeights     []float64 // 對應的權重
 		totalCount       int
 		successCount     int
+		lastPingTime     int64
 	}
 
 	nodeData := make(map[string]*nodeRawData)
@@ -182,6 +187,10 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 		if !exists {
 			nd = &nodeRawData{}
 			nodeData[name] = nd
+		}
+
+		if timestamp > nd.lastPingTime {
+			nd.lastPingTime = timestamp
 		}
 
 		// 計算時間衰減權重
@@ -263,6 +272,7 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			SampleCount:        nd.totalCount,
 			AvgBandwidth:       0.0,
 			TotalConsumedBytes: 0,
+			LastPingTime:       nd.lastPingTime,
 		}
 	}
 
@@ -270,7 +280,7 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	// 第二層：頻寬加分（對數遞減 + 硬性上限）
 	// ========================================
 	bwQuery := `
-		SELECT node_name, AVG(speed_kbps), SUM(downloaded_bytes) 
+		SELECT node_name, AVG(speed_kbps), SUM(downloaded_bytes), MAX(timestamp) 
 		FROM bandwidth_logs 
 		WHERE timestamp >= ? 
 		GROUP BY node_name
@@ -282,7 +292,8 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			var name string
 			var avgBw sql.NullFloat64
 			var sumBytes sql.NullInt64
-			if err := bwRows.Scan(&name, &avgBw, &sumBytes); err == nil {
+			var maxTime sql.NullInt64
+			if err := bwRows.Scan(&name, &avgBw, &sumBytes, &maxTime); err == nil {
 				if sc, exists := scores[name]; exists {
 					if avgBw.Valid {
 						sc.AvgBandwidth = avgBw.Float64
@@ -297,6 +308,9 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 					if sumBytes.Valid {
 						sc.TotalConsumedBytes = sumBytes.Int64
 					}
+					if maxTime.Valid {
+						sc.LastBandwidthTime = maxTime.Int64
+					}
 					scores[name] = sc
 				}
 			}
@@ -307,7 +321,7 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	// 第三層：瀏覽器測試修正（連續懲罰函數）
 	// ========================================
 	brQuery := `
-		SELECT node_name, AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END), AVG(CASE WHEN success THEN load_time_ms ELSE NULL END)
+		SELECT node_name, AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END), AVG(CASE WHEN success THEN load_time_ms ELSE NULL END), MAX(timestamp)
 		FROM browser_logs 
 		WHERE timestamp >= ? 
 		GROUP BY node_name
@@ -319,8 +333,10 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			var name string
 			var brSuccessRate sql.NullFloat64
 			var avgLoad sql.NullFloat64
-			if err := brRows.Scan(&name, &brSuccessRate, &avgLoad); err == nil {
+			var maxTime sql.NullInt64
+			if err := brRows.Scan(&name, &brSuccessRate, &avgLoad, &maxTime); err == nil {
 				if sc, exists := scores[name]; exists {
+					sc.BrowserTested = true
 					if brSuccessRate.Valid {
 						sc.BrowserSuccessRate = brSuccessRate.Float64
 						// V3: 連續懲罰函數 — 低於 80% 開始線性扣分，0% 扣滿 2000 分
@@ -336,6 +352,9 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 						if bonus > 0 {
 							sc.Score += bonus
 						}
+					}
+					if maxTime.Valid {
+						sc.LastBrowserTime = maxTime.Int64
 					}
 					scores[name] = sc
 				}
@@ -389,7 +408,7 @@ func (d *DB) GetBrowserHistory(nodeName string, hours int) ([]BrowserLog, error)
 	query := `
 		SELECT timestamp, load_time_ms 
 		FROM browser_logs 
-		WHERE node_name = ? AND timestamp >= ? AND success = 1
+		WHERE node_name = ? AND timestamp >= ?
 		ORDER BY timestamp ASC
 	`
 

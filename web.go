@@ -415,6 +415,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             border-bottom: 1px solid rgba(255, 255, 255, 0.03);
             font-size: 0.95rem;
             transition: background 0.2s;
+            white-space: nowrap;
         }
 
         tr.node-row:hover td {
@@ -516,61 +517,168 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             to { opacity: 1; transform: translateY(0); }
         }
 
-        /* Terminal Logs */
+        /* Terminal Logs Redesign */
         .terminal-container {
             margin-top: 2rem;
-            background: var(--bg-base);
-            border: 1px solid var(--border-light);
-            border-radius: 12px;
+            background: rgba(3, 7, 18, 0.85);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
             overflow: hidden;
-            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
 
         .terminal-header {
             background: rgba(255, 255, 255, 0.03);
-            padding: 10px 16px;
+            padding: 14px 20px;
             font-family: 'Outfit', sans-serif;
             font-weight: 600;
-            color: var(--text-muted);
-            border-bottom: 1px solid var(--border-light);
+            color: #e5e7eb;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
             display: flex;
             align-items: center;
+        }
+
+        .mac-dots {
+            display: flex;
             gap: 8px;
+            margin-right: 16px;
+        }
+        .mac-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .mac-dot.close { background: #ff5f56; box-shadow: 0 0 10px rgba(255, 95, 86, 0.4); }
+        .mac-dot.min { background: #ffbd2e; box-shadow: 0 0 10px rgba(255, 189, 46, 0.4); }
+        .mac-dot.max { background: #27c93f; box-shadow: 0 0 10px rgba(39, 201, 63, 0.4); }
+
+        .terminal-title {
+            font-size: 0.95rem;
+            letter-spacing: 1px;
+            color: #9ca3af;
+            text-transform: uppercase;
         }
 
         .terminal-body {
-            height: calc(100vh - 250px);
+            height: calc(100vh - 280px);
             min-height: 400px;
             overflow-y: auto;
-            padding: 16px;
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 0.85rem;
-            line-height: 1.5;
+            padding: 20px 24px;
+            font-family: 'JetBrains Mono', 'Consolas', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
             color: #d1d5db;
         }
 
-        .terminal-body::-webkit-scrollbar {
-            width: 8px;
-        }
-        .terminal-body::-webkit-scrollbar-thumb {
-            background: rgba(255,255,255,0.1);
-            border-radius: 4px;
-        }
+        .terminal-body::-webkit-scrollbar { width: 8px; }
+        .terminal-body::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+        .terminal-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+        .terminal-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.25); }
 
         .log-line {
-            margin-bottom: 4px;
-            word-wrap: break-word;
+            display: flex;
+            align-items: flex-start;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.02);
+            border-left: 4px solid transparent;
+            transition: all 0.2s ease;
+            animation: slideIn 0.3s ease-out forwards;
         }
 
-        .log-time { color: #6b7280; margin-right: 8px; }
-        .log-level-info { color: #3b82f6; }
-        .log-level-success { color: #10b981; }
-        .log-level-warning { color: #f59e0b; }
-        .log-level-error { color: #ef4444; font-weight: bold; }
-        .log-level-header { color: #c084fc; font-weight: bold; }
-        .log-level-muted { color: #6b7280; }
-        .log-level-tree { color: #9ca3af; }
-        .log-level-group { color: #60a5fa; font-weight: bold; margin-top: 8px; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .log-line:hover {
+            background: rgba(255, 255, 255, 0.04);
+            transform: translateX(2px);
+        }
+
+        .log-time {
+            color: #6b7280;
+            font-size: 0.85rem;
+            padding-right: 16px;
+            white-space: nowrap;
+            user-select: none;
+            padding-top: 2px;
+        }
+
+        .log-content {
+            flex: 1;
+            word-break: break-word;
+        }
+
+        .log-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 800;
+            margin-right: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            vertical-align: middle;
+        }
+
+        /* Level Specific Styles */
+        .log-level-info { border-left-color: #3b82f6; }
+        .log-level-info .log-msg { color: #bfdbfe; }
+        .badge-info { background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3); }
+
+        .log-level-success { border-left-color: #10b981; background: rgba(16, 185, 129, 0.05); }
+        .log-level-success .log-msg { color: #a7f3d0; font-weight: 500; }
+        .badge-success { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid rgba(16,185,129,0.3); }
+
+        .log-level-warning { border-left-color: #f59e0b; background: rgba(245, 158, 11, 0.05); }
+        .log-level-warning .log-msg { color: #fde68a; font-weight: 500; }
+        .badge-warning { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+
+        .log-level-error { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+        .log-level-error .log-msg { color: #fca5a5; font-weight: 600; }
+        .badge-error { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+
+        .log-level-header {
+            border-left: none;
+            background: linear-gradient(90deg, rgba(139, 92, 246, 0.15), transparent);
+            margin: 20px 0 12px 0;
+            padding: 12px 16px;
+            border-radius: 8px;
+            justify-content: center;
+        }
+        .log-level-header .log-time { display: none; }
+        .log-level-header .log-content {
+            text-align: center;
+            color: #c084fc;
+            font-weight: 800;
+            letter-spacing: 2px;
+            text-shadow: 0 0 15px rgba(192, 132, 252, 0.4);
+        }
+
+        .log-level-group {
+            border-left-color: #8b5cf6;
+            background: rgba(139, 92, 246, 0.05);
+            margin-top: 16px;
+        }
+        .log-level-group .log-msg { color: #ddd6fe; font-weight: 700; }
+        .badge-group { background: rgba(139, 92, 246, 0.2); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); }
+
+        .log-level-tree {
+            border-left-color: transparent;
+            padding-left: 28px;
+            background: transparent;
+        }
+        .log-level-tree:hover { background: rgba(255, 255, 255, 0.02); }
+        .log-level-tree .log-msg { color: #9ca3af; }
+        
+        .log-level-muted {
+            border-left-color: #4b5563;
+        }
+        .log-level-muted .log-msg { color: #6b7280; }
     </style>
 </head>
 <body>
@@ -610,18 +718,13 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                                 <th>Rank</th>
                                 <th>Node Name</th>
                                 <th>Score</th>
-                                <th>Success</th>
-                                <th>Avg Ping</th>
-                                <th>Jitter (σ)</th>
-                                <th>Samples</th>
-                                <th>Avg Speed</th>
-                                <th>Data Used</th>
+                                <th>Ping Success</th>
                                 <th>Web Success</th>
                                 <th>Web Load</th>
                             </tr>
                         </thead>
                         <tbody id="tbody">
-                            <tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
+                            <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px;">Initializing Data...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -631,7 +734,12 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
         <div id="tab-logs" class="tab-content">
             <div class="terminal-container" style="margin-top: 0;">
                 <div class="terminal-header">
-                    <span style="color: var(--success); font-size: 1.2rem;">&bull;</span> 系統即時日誌 (Live Terminal)
+                    <div class="mac-dots">
+                        <div class="mac-dot close"></div>
+                        <div class="mac-dot min"></div>
+                        <div class="mac-dot max"></div>
+                    </div>
+                    <div class="terminal-title">System Logs Console</div>
                 </div>
                 <div id="terminalBody" class="terminal-body">
                     <!-- Logs injected here -->
@@ -641,6 +749,17 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
     </div>
 
     <script>
+        function timeAgo(timestamp) {
+            if (!timestamp) return '';
+            const seconds = Math.floor(Date.now() / 1000) - timestamp;
+            if (seconds < 60) return seconds + ' 秒前';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return minutes + ' 分鐘前';
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return hours + ' 小時前';
+            return Math.floor(hours / 24) + ' 天前';
+        }
+
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -733,7 +852,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const tbody = document.getElementById('tbody');
                 
                 if (!data || data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--text-muted);padding:40px;">目前沒有節點數據</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:40px;">目前沒有節點數據</td></tr>';
                     return;
                 }
 
@@ -741,6 +860,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     tbody.innerHTML = '';
                 }
 
+                window.nodeList = data;
                 data.forEach((node, index) => {
                     let tr = document.getElementById('row-' + index);
                     if (!tr) {
@@ -752,53 +872,30 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     }
                     
                     const successColor = node.SuccessRate > 0.9 ? 'var(--success)' : (node.SuccessRate > 0.5 ? 'var(--warning)' : 'var(--danger)');
-                    const speedStr = node.AvgBandwidth > 0 ? (node.AvgBandwidth > 1000 ? (node.AvgBandwidth/1024).toFixed(2) + ' MB/s' : node.AvgBandwidth.toFixed(1) + ' KB/s') : '<span style="color:var(--text-muted)">-</span>';
                     
-                    let consumedStr = '<span style="color:var(--text-muted)">-</span>';
-                    if (node.TotalConsumedBytes > 0) {
-                        const mb = node.TotalConsumedBytes / (1024 * 1024);
-                        if (mb >= 1024) {
-                            consumedStr = (mb / 1024).toFixed(2) + ' GB';
-                        } else {
-                            consumedStr = mb.toFixed(1) + ' MB';
-                        }
-                    }
-
                     const rankClass = index < 3 ? 'rank-' + (index+1) : '';
                     let providerTag = node.provider ? '<br><span style="font-size:0.75rem; color:var(--text-muted); background:rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.05); padding:2px 6px; border-radius:4px; display:inline-block; margin-top:4px;">🏢 ' + node.provider + '</span>' : '';
-
-                    let jitterColor = '#94a3b8'; // text-muted
-                    // V3: Jitter 現在是標準差，數值比 MAX-MIN 小很多，調整門檻
-                    if (node.Jitter > 150) {
-                        jitterColor = 'var(--danger)';
-                    } else if (node.Jitter > 50) {
-                        jitterColor = 'var(--warning)';
-                    }
 
                     const webSuccessColor = node.BrowserSuccessRate >= 0.9 ? 'var(--success)' : (node.BrowserSuccessRate >= 0.5 ? 'var(--warning)' : 'var(--danger)');
                     let webSuccessStr = '<span style="color:var(--text-muted)">-</span>';
                     let webLoadStr = '<span style="color:var(--text-muted)">-</span>';
-                    if (node.AvgBrowserLoadTime > 0 || node.BrowserSuccessRate > 0) {
+                    if (node.BrowserTested) {
                         webSuccessStr = '<span style="color: ' + webSuccessColor + ';">' + (node.BrowserSuccessRate * 100).toFixed(0) + '%</span>';
                         if (node.AvgBrowserLoadTime > 0) {
                             webLoadStr = (node.AvgBrowserLoadTime / 1000).toFixed(2) + ' s';
+                        } else {
+                            webLoadStr = '<span style="color:var(--danger)">Timeout</span>';
                         }
                     }
 
-                    // V3: 顯示樣本數
-                    const sampleStr = node.SampleCount || 0;
+                    let browserTimeStr = node.LastBrowserTime ? '<span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;">(' + timeAgo(node.LastBrowserTime) + ')</span>' : '';
 
                     tr.innerHTML = '<td class="rank ' + rankClass + '">#' + (index + 1) + '</td>' +
                         '<td style="font-weight: 600; color: #fff;">' + node.Name + providerTag + '</td>' +
                         '<td><span class="score-badge">' + node.Score + '</span></td>' +
                         '<td class="success-rate" style="color: ' + successColor + ';">' + (node.SuccessRate * 100).toFixed(1) + '%</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif;">' + node.AvgDelay.toFixed(0) + ' ms</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600; color: ' + jitterColor + ';">' + node.Jitter + ' ms</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif; color: var(--text-muted);">' + sampleStr + '</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 500;">' + speedStr + '</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif;">' + consumedStr + '</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600;">' + webSuccessStr + '</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif;">' + webLoadStr + '</td>';
+                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600;">' + webSuccessStr + browserTimeStr + '</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif;">' + webLoadStr + browserTimeStr + '</td>';
                 });
             } catch (err) {}
         }
@@ -827,7 +924,30 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             chartRow = document.createElement('tr');
             chartRow.id = 'chart-row-' + index;
             chartRow.className = 'chart-row expanded-row';
-            chartRow.innerHTML = '<td colspan="11"><div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></td>';
+            
+            const node = window.nodeList[index];
+            const speedStr = node.AvgBandwidth > 0 ? (node.AvgBandwidth > 1000 ? (node.AvgBandwidth/1024).toFixed(2) + ' MB/s' : node.AvgBandwidth.toFixed(1) + ' KB/s') : '<span style="color:var(--text-muted)">-</span>';
+            let consumedStr = '<span style="color:var(--text-muted)">-</span>';
+            if (node.TotalConsumedBytes > 0) {
+                const mb = node.TotalConsumedBytes / (1024 * 1024);
+                if (mb >= 1024) consumedStr = (mb / 1024).toFixed(2) + ' GB';
+                else consumedStr = mb.toFixed(1) + ' MB';
+            }
+            
+            let bwTimeStr = node.LastBandwidthTime ? '<span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;">(' + timeAgo(node.LastBandwidthTime) + ')</span>' : '';
+            let pingTimeStr = node.LastPingTime ? '<span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;">(' + timeAgo(node.LastPingTime) + ')</span>' : '';
+
+            let jitterColor = node.Jitter > 150 ? 'var(--danger)' : (node.Jitter > 50 ? 'var(--warning)' : '#9ca3af');
+
+            let detailsHtml = '<div style="display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; background: rgba(0,0,0,0.15); border-radius: 12px; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.05);">' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Avg Ping</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + node.AvgDelay.toFixed(0) + ' ms' + pingTimeStr + '</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Jitter (σ)</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:' + jitterColor + '; font-weight:600;">' + node.Jitter + ' ms</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Samples</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + (node.SampleCount || 0) + '</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Avg Speed</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + speedStr + bwTimeStr + '</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Data Used</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + consumedStr + bwTimeStr + '</div></div>' +
+            '</div>';
+
+            chartRow.innerHTML = '<td colspan="6"><div style="padding: 10px;">' + detailsHtml + '<div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></div></td>';
             tr.parentNode.insertBefore(chartRow, tr.nextSibling);
 
             try {
@@ -835,7 +955,7 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                 const dataRaw = await res.json();
                 
                 if (!dataRaw || !dataRaw.ping || dataRaw.ping.length === 0) {
-                    chartRow.innerHTML = '<td colspan="11" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
+                    chartRow.innerHTML = '<td colspan="6"><div style="padding: 10px;">' + detailsHtml + '<div style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史趨勢圖表資料</div></div></td>';
                     return;
                 }
 
@@ -1018,22 +1138,57 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
         function appendLog(entry) {
             const term = document.getElementById('terminalBody');
             const div = document.createElement('div');
-            div.className = 'log-line';
             
-            let colorClass = 'log-level-info';
-            if (entry.level) {
-                colorClass = 'log-level-' + entry.level;
+            let levelClass = 'log-level-info';
+            let badgeClass = 'badge-info';
+            let badgeText = '';
+
+            if (['info', 'success', 'warning', 'error', 'header', 'muted', 'tree', 'group'].includes(entry.level)) {
+                levelClass = 'log-level-' + entry.level;
             }
 
-            div.innerHTML = '<span class="log-time">[' + entry.time + ']</span> <span class="' + colorClass + '">' + escapeHtml(entry.message) + '</span>';
-            term.appendChild(div);
+            if (entry.level === 'info') { badgeClass = 'badge-info'; badgeText = 'INFO'; }
+            else if (entry.level === 'success') { badgeClass = 'badge-success'; badgeText = 'OK'; }
+            else if (entry.level === 'warning') { badgeClass = 'badge-warning'; badgeText = 'WARN'; }
+            else if (entry.level === 'error') { badgeClass = 'badge-error'; badgeText = 'FAIL'; }
+            else if (entry.level === 'group') { badgeClass = 'badge-group'; badgeText = 'GRP'; }
 
-            // Auto scroll to bottom
-            term.scrollTop = term.scrollHeight;
+            div.className = 'log-line ' + levelClass;
+            
+            let badgeHtml = '';
+            if (badgeText) {
+                badgeHtml = '<span class="log-badge ' + badgeClass + '">' + badgeText + '</span>';
+            }
+
+            let msgText = entry.message;
+            // Clean up emojis from message if they were prepended by logger
+            if (entry.level === 'info' && msgText.startsWith('💡 ')) msgText = msgText.substring('💡 '.length);
+            if (entry.level === 'success' && msgText.startsWith('✅ ')) msgText = msgText.substring('✅ '.length);
+            if (entry.level === 'warning' && msgText.startsWith('⚠️ ')) msgText = msgText.substring('⚠️ '.length);
+            if (entry.level === 'error' && msgText.startsWith('❌ ')) msgText = msgText.substring('❌ '.length);
+            if (entry.level === 'error' && msgText.startsWith('🚑 ')) msgText = msgText.substring('🚑 '.length);
+
+            let msgHtml = '<div class="log-content">' + badgeHtml + '<span class="log-msg">' + escapeHtml(msgText) + '</span></div>';
+            
+            div.innerHTML = '<div class="log-time">[' + entry.time + ']</div>' + msgHtml;
+            
+            const isScrolledToBottom = term.scrollHeight - term.clientHeight <= term.scrollTop + 50;
+            
+            term.appendChild(div);
 
             // Keep only last 200 elements in DOM
             while (term.children.length > 200) {
-                term.removeChild(term.firstChild);
+                const first = term.firstChild;
+                const h = first.offsetHeight;
+                term.removeChild(first);
+                if (!isScrolledToBottom) {
+                    term.scrollTop -= h; // Adjust scroll position to prevent jumping
+                }
+            }
+
+            // Auto scroll to bottom only if user is already at the bottom
+            if (isScrolledToBottom) {
+                term.scrollTop = term.scrollHeight;
             }
         }
 

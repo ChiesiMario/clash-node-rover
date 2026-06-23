@@ -480,9 +480,10 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 	}
 
-	// 4. 為每個群組獨立計算最佳節點
-	groupTargetNodes := make(map[string]string)
-	proposedSwitches := make(map[string]string)
+	// 4. 為每個群組獨立計算最佳節點候選人
+	groupHighestScoreNode := make(map[string]string)
+	groupFastestNode := make(map[string]string)
+	groupFastestFallbackReason := make(map[string]string) // 用於未開啟網頁測試時的決策原因
 
 	for _, groupName := range r.GetConfig().TargetGroups {
 		nodes, ok := groupNodesMap[groupName]
@@ -511,7 +512,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			if okScore && scoreData.AvgBrowserLoadTime > 0 {
 				browserLoad = scoreData.AvgBrowserLoadTime
 			} else {
-				// 尚未測試過網頁的節點，使用當前 Ping * 10 作為暫代值，避免永遠選不上
+				// 尚未測試過網頁的節點，使用當前 Ping * 10 作為暫代值
 				browserLoad = float64(s.Delay * 10)
 			}
 
@@ -529,36 +530,24 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 		if fastestNode == "" {
 			groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprint("決策：所有參與測試的節點皆失敗，保留目前節點"))
-			groupTargetNodes[groupName] = groupNowMap[groupName]
 			continue
 		}
 
-		targetNode := fastestNode
-		reason := colorInfo.Sprint("網頁開啟速度最快")
+		groupHighestScoreNode[groupName] = highestScoreNode
+		groupFastestNode[groupName] = fastestNode
 
-		if highestScoreNode != "" && highestScoreNode != fastestNode {
-			diff := highestScoreBrowserLoad - fastestBrowserLoad
-			if diff <= float64(r.GetConfig().BrowserToleranceMs) {
-				targetNode = highestScoreNode
-				reason = colorSuccess.Sprintf("質量分最高，且網頁開啟與最快差距僅 %d ms", int(diff))
-			} else {
-				reason = colorWarning.Sprintf("高分節點網頁較慢 (落後 %d ms 超過容忍度)，因此選網頁最快節點", int(diff))
+		// 如果未開啟網頁測試，提早寫入 fallback 的決策原因
+		if !r.GetConfig().EnableBrowserTest {
+			reason := colorInfo.Sprint("網頁開啟速度最快")
+			if highestScoreNode != "" && highestScoreNode != fastestNode {
+				diff := highestScoreBrowserLoad - fastestBrowserLoad
+				if diff <= float64(r.GetConfig().BrowserToleranceMs) {
+					reason = colorSuccess.Sprintf("質量分最高，且預估網頁開啟與最快差距僅 %d ms", int(diff))
+				} else {
+					reason = colorWarning.Sprintf("高分節點預估網頁較慢 (落後 %d ms 超過容忍度)，因此選預估最快節點")
+				}
 			}
-		}
-
-		groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("⚖️ 決策邏輯：%s", reason))
-		groupTargetNodes[groupName] = targetNode
-
-		currentNow := groupNowMap[groupName]
-		if targetNode != currentNow && currentNow != "" {
-			groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("🔌 狀態：大腦擬定從 %s 切換至 %s (等待試飛)", formatNode(currentNow), formatNode(targetNode)))
-			proposedSwitches[groupName] = targetNode
-
-			if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
-				beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
-			}
-		} else {
-			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 狀態：目前的節點 %s 依然是最佳選擇，無需切換", formatNode(currentNow)))
+			groupFastestFallbackReason[groupName] = reason
 		}
 	}
 
@@ -577,13 +566,25 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			continue
 		}
 
-		targetNode := groupTargetNodes[groupName]
+		currentNow := groupNowMap[groupName]
+		highestNode := groupHighestScoreNode[groupName]
+		fastestNode := groupFastestNode[groupName]
 		var candidatesToTest []string
 
-		// 必定加入「當前選擇節點 (Target Node)」
-		if targetNode != "" {
-			candidatesToTest = append(candidatesToTest, targetNode)
+		candidatesMap := make(map[string]bool)
+		addCandidate := func(name string) {
+			if name != "" && !candidatesMap[name] {
+				candidatesMap[name] = true
+				candidatesToTest = append(candidatesToTest, name)
+			}
 		}
+
+		// 必定加入「實際在位節點 (Current Node)」
+		addCandidate(currentNow)
+		// 加入「最高分節點 (Highest Score Node)」
+		addCandidate(highestNode)
+		// 加入「歷史最快節點 (Fastest Node)」
+		addCandidate(fastestNode)
 
 		// 尋找一位「面試節點 (Exploration Node)」
 		explorationCandidate := ""
@@ -593,8 +594,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			if !ok || sc.SuccessRate < 0.8 {
 				continue
 			}
-			// 排除掉已經在名單內的 Target Node
-			if name == targetNode {
+			// 排除掉已經在名單內的節點
+			if candidatesMap[name] {
 				continue
 			}
 			// 檢查面試冷卻期
@@ -606,9 +607,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			}
 		}
 
-		if explorationCandidate != "" {
-			candidatesToTest = append(candidatesToTest, explorationCandidate)
-		}
+		addCandidate(explorationCandidate)
 
 		if len(candidatesToTest) == 0 {
 			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("⏳ 測速：無節點可測"))
@@ -639,14 +638,28 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				originalTarget = groupNowMap[groupName]
 			}
 
-			isExploration := (candidate != targetNode)
+			isCurrent := (candidate == currentNow)
+			isHighest := (candidate == highestNode)
+			isFastest := (candidate == fastestNode)
+			
+			var tags []string
+			if isCurrent { tags = append(tags, "在位") }
+			if isHighest { tags = append(tags, "最高分") }
+			if isFastest { tags = append(tags, "最快") }
+			
 			tag := ""
-			if isExploration {
-				tag = " (面試)"
-				groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("🎯 測速對象 (面試)：%s", formatNode(candidate)))
+			if len(tags) > 0 {
+				tag = " (" + strings.Join(tags, ", ") + ")"
 			} else {
-				tag = " (在位)"
-				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("👑 測速對象 (在位)：%s", formatNode(candidate)))
+				tag = " (面試)"
+			}
+
+			if isCurrent {
+				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("👑 測速對象%s：%s", tag, formatNode(candidate)))
+			} else if candidate == explorationCandidate {
+				groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("🎯 測速對象%s：%s", tag, formatNode(candidate)))
+			} else {
+				groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprintf("🛫 測速對象%s：%s", tag, formatNode(candidate)))
 			}
 
 			if candidate != originalTarget {
@@ -741,39 +754,101 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 	}
 
-	// Phase 6.5: 最終決選審查 (Two-Stage Decision)
+	// Phase 6.5: 最終決選審查 (Real-time Decision)
 	finalSwitches := make(map[string]string)
-	if r.GetConfig().EnableBrowserTest {
-		for groupName, proposedNode := range proposedSwitches {
-			currentNode := groupNowMap[groupName]
-			realTimeLoadMs, hasPreflight := preflightResults[proposedNode]
-			
-			if !hasPreflight || realTimeLoadMs == 99999 {
-				groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🚫 試飛審查：節點癱瘓或試飛失敗，未達切換要求，取消切換任務"))
+
+	for _, groupName := range r.GetConfig().TargetGroups {
+		nodes, ok := groupNodesMap[groupName]
+		if !ok || len(nodes) == 0 {
+			continue
+		}
+
+		highestNode := groupHighestScoreNode[groupName]
+		fastestNode := groupFastestNode[groupName]
+		currentNow := groupNowMap[groupName]
+
+		if !r.GetConfig().EnableBrowserTest {
+			// 如果沒有開啟無頭瀏覽器測試，使用歷史預估決定
+			if fastestNode == "" {
+				continue
+			}
+			targetNode := fastestNode
+			// 根據 Phase 4 計算的 fallback reason 找出 targetNode
+			if strings.Contains(groupFastestFallbackReason[groupName], "質量分最高") {
+				targetNode = highestNode
+			}
+
+			if targetNode != currentNow && currentNow != "" {
+				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("⚖️ 決策邏輯：%s", groupFastestFallbackReason[groupName]))
+				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
+				finalSwitches[groupName] = targetNode
+
+				if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
+					beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
+				}
+			} else {
+				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 狀態：目前的節點 %s 依然是最佳選擇，無需切換", formatNode(currentNow)))
+			}
+			continue
+		}
+
+		// 有開啟網頁測試，基於即時試飛成績 (preflightResults) 做決定
+		realFastestNode := ""
+		realFastestLoad := 999999
+
+		for candidate, loadMs := range preflightResults {
+			// 確認 candidate 在此群組內
+			isNodeInGroup := false
+			for _, n := range nodes {
+				if n == candidate {
+					isNodeInGroup = true
+					break
+				}
+			}
+			if !isNodeInGroup {
 				continue
 			}
 
-			// 取得在位節點的歷史平均速度
-			currentNodeAvg := 0.0
-			if sc, ok := scores[currentNode]; ok && sc.AvgBrowserLoadTime > 0 {
-				currentNodeAvg = sc.AvgBrowserLoadTime
-			} else {
-				currentNodeAvg = float64(r.GetConfig().BrowserToleranceMs) // 預設給一個基準
-			}
-
-			if float64(realTimeLoadMs) <= currentNodeAvg + float64(r.GetConfig().BrowserToleranceMs) {
-				groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 試飛審查：實測 %d ms 表現優異，正式核准切換！", realTimeLoadMs))
-				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(proposedNode)))
-				finalSwitches[groupName] = proposedNode
-			} else {
-				groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprintf("⚠️ 試飛審查：實測 %d ms 不如預期 (在位節點為 %d ms)，未達切換要求，退回原節點", realTimeLoadMs, int(currentNodeAvg)))
+			if loadMs > 0 && loadMs < realFastestLoad {
+				realFastestLoad = loadMs
+				realFastestNode = candidate
 			}
 		}
-	} else {
-		// 如果沒有開啟無頭瀏覽器測試，就直接核准所有擬切換名單
-		for groupName, proposedNode := range proposedSwitches {
-			systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(proposedNode)))
-			finalSwitches[groupName] = proposedNode
+
+		if realFastestNode == "" {
+			groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🚫 所有候選節點網頁試飛皆失敗，維持原節點"))
+			continue
+		}
+
+		targetNode := realFastestNode
+		reason := ""
+
+		highestLoadMs, hasHighest := preflightResults[highestNode]
+		if hasHighest && highestLoadMs != 99999 {
+			diff := highestLoadMs - realFastestLoad
+			if highestNode == realFastestNode {
+				targetNode = highestNode
+				reason = colorSuccess.Sprintf("%s 既是最高分節點，也是網頁測試打開速度最快的節點 (實測 %d ms)", formatNode(highestNode), highestLoadMs)
+			} else if diff <= r.GetConfig().BrowserToleranceMs {
+				targetNode = highestNode
+				reason = colorSuccess.Sprintf("質量最高分節點實測 %d ms，與最快節點 (%s, %d ms) 差距 %d ms 在容忍值內，優先選用最高分", highestLoadMs, formatNode(realFastestNode), realFastestLoad, diff)
+			} else {
+				reason = colorWarning.Sprintf("最高分節點實測 %d ms，落後最快節點 %d ms 超過容忍值，選擇最快節點 %s", highestLoadMs, diff, formatNode(realFastestNode))
+			}
+		} else {
+			reason = colorWarning.Sprintf("最高分節點未測或失敗，選擇最快節點 %s (%d ms)", formatNode(realFastestNode), realFastestLoad)
+		}
+
+		if targetNode != currentNow && currentNow != "" {
+			groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：%s，核准切換！", reason))
+			systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
+			finalSwitches[groupName] = targetNode
+			
+			if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
+				beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
+			}
+		} else {
+			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 最終決策：%s，維持現有節點 %s", reason, formatNode(currentNow)))
 		}
 	}
 

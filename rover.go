@@ -454,7 +454,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 	// 4. 為每個群組獨立計算最佳節點
 	groupTargetNodes := make(map[string]string)
-	pendingSwitches := make(map[string]string)
+	proposedSwitches := make(map[string]string)
 
 	for _, groupName := range r.GetConfig().TargetGroups {
 		nodes, ok := groupNodesMap[groupName]
@@ -523,9 +523,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 		currentNow := groupNowMap[groupName]
 		if targetNode != currentNow && currentNow != "" {
-			groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("🔌 狀態：預計從 %s 切換至 %s", formatNode(currentNow), formatNode(targetNode)))
-			systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
-			pendingSwitches[groupName] = targetNode
+			groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("🔌 狀態：大腦擬定從 %s 切換至 %s (等待試飛)", formatNode(currentNow), formatNode(targetNode)))
+			proposedSwitches[groupName] = targetNode
 
 			if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
 				beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
@@ -542,6 +541,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	scores, _ = r.db.GetScores(r.GetConfig().HistoryDays)
 
 	alreadyTestedInCycle := make(map[string]bool)
+	preflightResults := make(map[string]int) // 儲存候選人即時的平均試飛成績
 
 	for _, groupName := range r.GetConfig().TargetGroups {
 		nodes, ok := groupNodesMap[groupName]
@@ -691,10 +691,17 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						logWarning("網頁開啟失敗: %s (目標: %s, 錯誤: %v)", formatNode(candidate), targetURL, err)
 						groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 網頁%s：開啟 %s 失敗", tag, targetURL))
 						r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
+						preflightResults[candidate] = 99999 // 失敗給予極大值
 					} else {
 						logSuccess("網頁成功開啟: %s (目標: %s, 耗時 %d ms)", formatNode(candidate), targetURL, loadTimeMs)
 						groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 網頁%s：成功開啟 %s (%d ms)", tag, targetURL, loadTimeMs))
 						r.db.InsertBrowserLog(candidate, targetURL, true, loadTimeMs)
+						// 儲存試飛成績 (如果有多個 URL 則取平均或保留最新一次，這裡為了簡化直接保留最後一次或覆蓋)
+						if existing, ok := preflightResults[candidate]; ok && existing != 99999 {
+							preflightResults[candidate] = (existing + loadTimeMs) / 2
+						} else {
+							preflightResults[candidate] = loadTimeMs
+						}
 					}
 				}
 			}
@@ -706,11 +713,47 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 	}
 
+	// Phase 6.5: 最終決選審查 (Two-Stage Decision)
+	finalSwitches := make(map[string]string)
+	if r.GetConfig().EnableBrowserTest {
+		for groupName, proposedNode := range proposedSwitches {
+			currentNode := groupNowMap[groupName]
+			realTimeLoadMs, hasPreflight := preflightResults[proposedNode]
+			
+			if !hasPreflight || realTimeLoadMs == 99999 {
+				groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🚫 試飛審查：節點癱瘓或試飛失敗，未達切換要求，取消切換任務"))
+				continue
+			}
+
+			// 取得在位節點的歷史平均速度
+			currentNodeAvg := 0.0
+			if sc, ok := scores[currentNode]; ok && sc.AvgBrowserLoadTime > 0 {
+				currentNodeAvg = sc.AvgBrowserLoadTime
+			} else {
+				currentNodeAvg = float64(r.GetConfig().BrowserToleranceMs) // 預設給一個基準
+			}
+
+			if float64(realTimeLoadMs) <= currentNodeAvg + float64(r.GetConfig().BrowserToleranceMs) {
+				groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 試飛審查：實測 %d ms 表現優異，正式核准切換！", realTimeLoadMs))
+				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(proposedNode)))
+				finalSwitches[groupName] = proposedNode
+			} else {
+				groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprintf("⚠️ 試飛審查：實測 %d ms 不如預期 (在位節點為 %d ms)，未達切換要求，退回原節點", realTimeLoadMs, int(currentNodeAvg)))
+			}
+		}
+	} else {
+		// 如果沒有開啟無頭瀏覽器測試，就直接核准所有擬切換名單
+		for groupName, proposedNode := range proposedSwitches {
+			systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(proposedNode)))
+			finalSwitches[groupName] = proposedNode
+		}
+	}
+
 	// 6. 統一執行所有主要群組的最終節點切換
 	successSwitches := 0
 	failSwitches := 0
-	if len(pendingSwitches) > 0 {
-		for groupName, targetNode := range pendingSwitches {
+	if len(finalSwitches) > 0 {
+		for groupName, targetNode := range finalSwitches {
 			if err := r.api.SelectProxy(groupName, targetNode); err != nil {
 				failSwitches++
 				logError("群組 [%s] 切換至 %s 失敗: %v", groupName, formatNode(targetNode), err)

@@ -691,9 +691,11 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				}
 			}
 
-			r.stateMutex.Lock()
-			r.lastInterviewTime[candidate] = time.Now()
-			r.stateMutex.Unlock()
+			if candidate == explorationCandidate {
+				r.stateMutex.Lock()
+				r.lastInterviewTime[candidate] = time.Now()
+				r.stateMutex.Unlock()
+			}
 			alreadyTestedInCycle[candidate] = true
 
 			// 1. 執行極限頻寬測速 (受 bandwidth_test_interval 限制)

@@ -7,7 +7,7 @@ api_url: "http://127.0.0.1:9090"
 api_secret: ""
 
 # 背景檢查與測速的間隔時間 (例如 60s, 1m, 5m)
-check_interval: 4m
+check_interval: 5m
 
 # 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (例如 PROXY 或 🤖 Node Rover)
 target_groups:
@@ -55,7 +55,7 @@ bandwidth_test_interval: 240
 
 # 潛力節點面試 (探索) 的獨立冷卻時間 (分鐘)。
 # 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點
-exploration_cooldown_minutes: 60
+exploration_cooldown_minutes: 90
 
 # 最大退避循環次數。節點連續 Ping 失敗後會按指數跳過測試，最高跳過此設定的次數。
 max_backoff_cycles: 5

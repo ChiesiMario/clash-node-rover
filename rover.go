@@ -573,6 +573,17 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	alreadyTestedInCycle := make(map[string]bool)
 	preflightResults := make(map[string]int) // 儲存候選人即時的平均試飛成績
 
+	var browserAllocCtx context.Context
+	var browserAllocCancel context.CancelFunc
+
+	if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
+		opts := append(chromedp.DefaultExecAllocatorOptions[:],
+			chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
+		)
+		browserAllocCtx, browserAllocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
+		defer browserAllocCancel()
+	}
+
 	for _, groupName := range r.GetConfig().TargetGroups {
 		nodes, ok := groupNodesMap[groupName]
 		if !ok || len(nodes) == 0 {
@@ -729,12 +740,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				logInfo("開始使用無頭瀏覽器測試網頁連通性: %s%s...", formatNode(candidate), tag)
 
 				for _, targetURL := range r.GetConfig().BrowserTestURLs {
-					opts := append(chromedp.DefaultExecAllocatorOptions[:],
-						chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
-					)
-
-					allocCtx, cancelAlloc := chromedp.NewExecAllocator(context.Background(), opts...)
-					ctx, cancelCtx := chromedp.NewContext(allocCtx)
+					// 使用共用的 Chrome 資源池，並強制開啟無痕隔離模式 (清除/隔離緩存)
+					ctx, cancelCtx := chromedp.NewContext(browserAllocCtx, chromedp.WithNewBrowserContext())
 
 					ctx, cancelTimeout := context.WithTimeout(ctx, 15*time.Second)
 
@@ -747,7 +754,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 					cancelTimeout()
 					cancelCtx()
-					cancelAlloc()
 
 					if err != nil {
 						logWarning("網頁開啟失敗: %s (目標: %s, 錯誤: %v)", formatNode(candidate), targetURL, err)

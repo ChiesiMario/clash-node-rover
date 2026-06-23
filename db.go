@@ -53,6 +53,10 @@ func InitDB() (*DB, error) {
 		return nil, err
 	}
 
+	// 開啟 WAL 模式與調整同步層級以優化高併發寫入
+	db.Exec("PRAGMA journal_mode=WAL;")
+	db.Exec("PRAGMA synchronous=NORMAL;")
+
 	// 自動升級資料庫結構 (如果舊版沒有 downloaded_bytes 欄位)
 	db.Exec("ALTER TABLE bandwidth_logs ADD COLUMN downloaded_bytes INTEGER DEFAULT 0;")
 

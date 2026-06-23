@@ -258,12 +258,12 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			}
 		}
 
-		// V3 評分公式：(加權成功率 × 10000) − (加權平均延遲) − (Jitter標準差 × 2)
-		score := int(weightedSuccessRate*10000) - int(avgDelay) - (jitter * 2)
+		// V4 評分公式：(加權成功率 × 3000) − (加權平均延遲) − (Jitter標準差 × 2)
+		score := int(weightedSuccessRate*3000) - int(avgDelay) - (jitter * 2)
 
 		scores[name] = NodeScore{
 			Name:               name,
-			Score:              score,
+			Score:              score + 1000 + 5500, // 預先加上樂觀初始值 (Bandwidth: 1000, Browser: 5500)
 			BaseScore:          score,
 			SuccessRate:        rawSuccessRate,
 			AdjustedRate:       adjustedRate,
@@ -296,9 +296,10 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			if err := bwRows.Scan(&name, &avgBw, &sumBytes, &maxTime); err == nil {
 				if sc, exists := scores[name]; exists {
 					if avgBw.Valid {
+						sc.Score -= 1000 // 扣除樂觀初始值
 						sc.AvgBandwidth = avgBw.Float64
-						// Score Algorithm V3: 對數遞減，前 2 MB/s 加分最快，之後邊際遞減
-						// 上限 2000 分（約 4 MB/s 時趨近滿分）
+						// V4: 對數遞減，前 2 MB/s 加分最快，之後邊際遞減
+						// 上限 2000 分
 						bwBonus := int(math.Log2(1+sc.AvgBandwidth/1024.0) * 1000)
 						if bwBonus > 2000 {
 							bwBonus = 2000
@@ -337,18 +338,23 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 			if err := brRows.Scan(&name, &brSuccessRate, &avgLoad, &maxTime); err == nil {
 				if sc, exists := scores[name]; exists {
 					sc.BrowserTested = true
+					if brSuccessRate.Valid || avgLoad.Valid {
+						sc.Score -= 5500 // 扣除樂觀初始值
+					}
+
 					if brSuccessRate.Valid {
 						sc.BrowserSuccessRate = brSuccessRate.Float64
-						// V3: 連續懲罰函數 — 低於 80% 開始線性扣分，0% 扣滿 2000 分
-						if brSuccessRate.Float64 < 0.8 {
-							penalty := int((0.8 - brSuccessRate.Float64) * 2500)
-							sc.Score -= penalty
-						}
+						// V4: 網頁成功率作為核心得分項目，滿分 4000
+						successBonus := int(brSuccessRate.Float64 * 4000)
+						sc.Score += successBonus
 					}
 					if avgLoad.Valid {
 						sc.AvgBrowserLoadTime = avgLoad.Float64
-						// 載入時間加分：越快分數越高。基準為 5 秒(5000ms)，每快 100ms 加 10 分
-						bonus := int(5000-avgLoad.Float64) / 10
+						// V4: 載入時間加分：越快分數越高。基準為 5 秒(5000ms)，每快 100ms 加 60 分
+						bonus := int(5000-avgLoad.Float64) * 6 / 10
+						if bonus > 3000 {
+							bonus = 3000
+						}
 						if bonus > 0 {
 							sc.Score += bonus
 						}

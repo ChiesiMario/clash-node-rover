@@ -35,7 +35,7 @@ type Config struct {
 	BandwidthTestURL      string        `yaml:"bandwidth_test_url"`
 	BandwidthTestInterval int           `yaml:"bandwidth_test_interval"`      // minutes
 	ExplorationCooldown   int           `yaml:"exploration_cooldown_minutes"` // minutes
-	MaxBackoffMinutes     int           `yaml:"max_backoff_minutes"`
+	MaxBackoffCycles      int           `yaml:"max_backoff_cycles"`
 
 	EnableFailover   bool `yaml:"enable_failover"`
 	FailoverInterval int  `yaml:"failover_interval"` // seconds
@@ -107,8 +107,8 @@ bandwidth_test_interval: 60
 # 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點
 exploration_cooldown_minutes: 60
 
-# 發生連線錯誤時的退避冷卻上限 (分鐘)。失敗越多次，冷卻越久，最高不超過此數值
-max_backoff_minutes: 30
+# 發生連線錯誤時的退避冷卻循環次數。失敗越多次，冷卻越久，最高不超過此數值
+max_backoff_cycles: 5
 
 # 是否啟用秒級急救機制 (當前使用節點斷線時，秒級切換至備用節點)
 enable_failover: true
@@ -152,11 +152,12 @@ func loadConfig() (*Config, error) {
 			var cfg Config
 			// 為了相容 JSON 欄位，我們暫時用一個匿名的 struct 來解析舊格式
 			var oldCfg struct {
-				APIUrl        string        `json:"api_url"`
-				APISecret     string        `json:"api_secret"`
-				CheckInterval time.Duration `json:"check_interval"`
-				TargetGroup   string        `json:"target_group"`
-				TargetGroups  []string      `json:"target_groups"`
+				APIUrl           string        `json:"api_url"`
+				APISecret        string        `json:"api_secret"`
+				CheckInterval    time.Duration `json:"check_interval"`
+				TargetGroup      string        `json:"target_group"`
+				TargetGroups     []string      `json:"target_groups"`
+				MaxBackoffCycles int           `json:"max_backoff_cycles"`
 			}
 			json.Unmarshal(data, &oldCfg)
 
@@ -242,8 +243,8 @@ func loadConfig() (*Config, error) {
 	if cfg.ExplorationCooldown <= 0 {
 		cfg.ExplorationCooldown = 60
 	}
-	if cfg.MaxBackoffMinutes <= 0 {
-		cfg.MaxBackoffMinutes = 30
+	if cfg.MaxBackoffCycles <= 0 {
+		cfg.MaxBackoffCycles = 5
 	}
 	// Failover defaults (for upgrades)
 	if cfg.FailoverInterval <= 0 {
@@ -314,7 +315,7 @@ func promptForConfig() (*Config, error) {
 		ClashProxyURL:       "http://127.0.0.1:7890",
 		BandwidthTestURL:    "https://speed.cloudflare.com/__down?bytes=15728640",
 		ExplorationCooldown: 60,
-		MaxBackoffMinutes:   30,
+		MaxBackoffCycles:    5,
 		EnableFailover:      true,
 		FailoverInterval:    3,
 		FailoverMaxFails:    2,

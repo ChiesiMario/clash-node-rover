@@ -23,6 +23,7 @@ type Rover struct {
 	db                *DB
 	consecutiveFailed int
 	failedConsec      map[string]int
+	backoffRemaining  map[string]int
 	lastCheckTime     map[string]time.Time
 	lastBandwidthTest map[string]time.Time
 	lastInterviewTime map[string]time.Time
@@ -42,6 +43,7 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		api:               api,
 		db:                db,
 		failedConsec:      make(map[string]int),
+		backoffRemaining:  make(map[string]int),
 		lastCheckTime:     make(map[string]time.Time),
 		lastBandwidthTest: make(map[string]time.Time),
 		lastInterviewTime: make(map[string]time.Time),
@@ -361,24 +363,15 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		return
 	}
 
-	now := time.Now()
 	var nodesToTest []string
 	totalBackoff := 0
 
-	// 指數退避檢查
+	// 純次數退避檢查
 	for name := range uniqueNodes {
-		fails := r.failedConsec[name]
-		if fails > 0 {
-			backoffMins := int(math.Pow(2, float64(fails-1)))
-			if backoffMins > r.GetConfig().MaxBackoffMinutes {
-				backoffMins = r.GetConfig().MaxBackoffMinutes
-			}
-
-			lastCheck := r.lastCheckTime[name]
-			if now.Sub(lastCheck) < time.Duration(backoffMins)*time.Minute {
-				totalBackoff++
-				continue
-			}
+		if r.backoffRemaining[name] > 0 {
+			r.backoffRemaining[name]--
+			totalBackoff++
+			continue
 		}
 		nodesToTest = append(nodesToTest, name)
 	}
@@ -443,10 +436,19 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			success := (s.Err == nil && s.Delay > 0)
 			if success {
 				r.failedConsec[s.Name] = 0
+				r.backoffRemaining[s.Name] = 0 // 成功時重置退避
 				successCount++
 				successfulStats = append(successfulStats, s)
 			} else {
 				r.failedConsec[s.Name]++
+				// 計算下一次的退避循環次數
+				fails := r.failedConsec[s.Name]
+				skipCycles := int(math.Pow(2, float64(fails-1)))
+				if skipCycles > r.GetConfig().MaxBackoffCycles {
+					skipCycles = r.GetConfig().MaxBackoffCycles
+				}
+				r.backoffRemaining[s.Name] = skipCycles
+
 				failCount++
 				if s.Err != nil {
 					logMuted("  - ❌ [失敗] %s: %v", formatNode(s.Name), s.Err)
@@ -599,7 +601,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 		// 尋找一位「面試節點 (Exploration Node)」
 		explorationCandidate := ""
-		highestBaseScore := -999999
+		highestTotalScore := -999999
 		for _, name := range nodes {
 			sc, ok := scores[name]
 			if !ok || sc.SuccessRate < 0.8 {
@@ -614,8 +616,9 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			lastInt := r.lastInterviewTime[name]
 			r.stateMutex.RUnlock()
 			if isManual || time.Since(lastInt) >= explorationDuration {
-				if sc.BaseScore > highestBaseScore {
-					highestBaseScore = sc.BaseScore
+				// 根據「總得分 (sc.Score)」來尋找名次最高且已經過冷卻期的節點
+				if sc.Score > highestTotalScore {
+					highestTotalScore = sc.Score
 					explorationCandidate = name
 				}
 			}

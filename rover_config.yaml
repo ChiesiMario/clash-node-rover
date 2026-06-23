@@ -57,8 +57,8 @@ bandwidth_test_interval: 240
 # 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點
 exploration_cooldown_minutes: 60
 
-# 發生連線錯誤時的退避冷卻上限 (分鐘)。失敗越多次，冷卻越久，最高不超過此數值
-max_backoff_minutes: 30
+# 最大退避循環次數。節點連續 Ping 失敗後會按指數跳過測試，最高跳過此設定的次數。
+max_backoff_cycles: 5
 
 # 是否啟用秒級急救機制 (當前使用節點斷線時，秒級切換至備用節點)
 enable_failover: true

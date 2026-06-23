@@ -380,9 +380,9 @@ func (d *DB) GetNodeHistory(nodeName string, hours int) ([]PingLog, error) {
 	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
 
 	query := `
-		SELECT timestamp, delay 
+		SELECT timestamp, CASE WHEN success = 1 THEN delay ELSE 0 END as delay
 		FROM ping_logs 
-		WHERE node_name = ? AND timestamp >= ? AND success = 1
+		WHERE node_name = ? AND timestamp >= ?
 		ORDER BY timestamp ASC
 	`
 

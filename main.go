@@ -29,6 +29,7 @@ func main() {
 		mw := io.MultiWriter(os.Stdout, logFile)
 		log.SetOutput(mw)
 	}
+	log.SetFlags(0) // 關閉預設的日期時間前綴
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatalf("讀取設定檔失敗: %v", err)

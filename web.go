@@ -50,10 +50,11 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 
 	http.HandleFunc("/api/groups", func(w http.ResponseWriter, r *http.Request) {
 		type GroupStatus struct {
-			Name     string `json:"name"`
-			Now      string `json:"now"`
-			Provider string `json:"provider"`
-			All      int    `json:"all_count"`
+			Name     string   `json:"name"`
+			Now      string   `json:"now"`
+			Provider string   `json:"provider"`
+			All      int      `json:"all_count"`
+			AllNodes []string `json:"all_nodes"`
 		}
 		var statuses []GroupStatus
 		for _, gName := range rover.GetConfig().TargetGroups {
@@ -64,6 +65,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 					Now:      g.Now,
 					Provider: GetNodeProvider(g.Now),
 					All:      len(g.All),
+					AllNodes: g.All,
 				})
 			}
 		}
@@ -105,18 +107,58 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 
 	http.HandleFunc("/api/history", func(w http.ResponseWriter, r *http.Request) {
 		nodeName := r.URL.Query().Get("node")
-		history, err := db.GetNodeHistory(nodeName, 24)
+		pingHistory, err := db.GetNodeHistory(nodeName, 24)
+		browserHistory, _ := db.GetBrowserHistory(nodeName, 24)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(history)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"ping":    pingHistory,
+			"browser": browserHistory,
+		})
 	})
 
 	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{"is_running": rover.IsRunning})
+		json.NewEncoder(w).Encode(map[string]bool{
+			"is_running": rover.IsRunning,
+			"is_paused":  rover.GetIsPaused(),
+		})
+	})
+
+	http.HandleFunc("/api/pause", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		isPaused := rover.TogglePause()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]bool{"is_paused": isPaused})
+	})
+
+	http.HandleFunc("/api/switch", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Group string `json:"group"`
+			Node  string `json:"node"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+		err := rover.api.SelectProxy(req.Group, req.Node)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		logInfo("⚡ 收到 Web UI 手動切換指令：將群組 [%s] 切換至 %s", req.Group, req.Node)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
 	http.HandleFunc("/api/trigger", func(w http.ResponseWriter, r *http.Request) {
@@ -535,9 +577,14 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
     <div class="container">
         <div class="header">
             <div class="logo">NODE ROVER</div>
-            <button id="triggerBtn" class="btn" onclick="triggerTest()">
-                <span id="triggerIcon">🚀</span> <span id="triggerText">立即測速</span>
-            </button>
+            <div style="display: flex; gap: 12px;">
+                <button id="pauseBtn" class="btn" style="background: linear-gradient(135deg, var(--warning), #d97706);" onclick="togglePause()">
+                    <span id="pauseIcon">⏸️</span> <span id="pauseText">暫停大腦</span>
+                </button>
+                <button id="triggerBtn" class="btn" onclick="triggerTest()">
+                    <span id="triggerIcon">🚀</span> <span id="triggerText">立即測速</span>
+                </button>
+            </div>
         </div>
 
         <div class="tabs">
@@ -619,20 +666,64 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 
                 let html = '';
                 data.forEach(g => {
+                    let options = g.all_nodes.map(n => '<option value="' + n + '" ' + (n === g.now ? 'selected' : '') + '>' + n + '</option>').join('');
                     html += '<div class="glass-panel group-card">' +
                             '<div class="group-header">' +
                                 '<h3 class="group-title">' + g.name + '</h3>' +
                             '</div>' +
                             '<div class="node-now">' + (g.now || '未選擇') + '</div>' +
                             (g.provider ? '<div style="margin-bottom: 12px; display: inline-block; padding: 4px 10px; border-radius: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); font-size: 0.8rem; color: #d1d5db;">🏢 ' + g.provider + '</div>' : '') +
-                            '<div class="node-meta">' +
+                            '<div class="node-meta" style="margin-bottom: 16px;">' +
                                 '<div class="status-dot"></div>' +
                                 '<span>當前運行中 &bull; 總計 ' + g.all_count + ' 個節點</span>' +
+                            '</div>' +
+                            '<div style="display: flex; gap: 8px;">' +
+                                '<select id="select-' + g.name + '" style="flex:1; background: rgba(0,0,0,0.3); color: white; border: 1px solid var(--border-light); border-radius: 8px; padding: 6px 10px;">' + options + '</select>' +
+                                '<button onclick="manualSwitch(\'' + g.name + '\')" style="background: var(--primary); border:none; color: white; border-radius: 8px; padding: 6px 12px; cursor: pointer; font-weight: bold;">強制切換</button>' +
                             '</div>' +
                         '</div>';
                 });
                 grid.innerHTML = html;
             } catch(err) {}
+        }
+
+        async function manualSwitch(groupName) {
+            const select = document.getElementById('select-' + groupName);
+            if (!select) return;
+            const targetNode = select.value;
+            try {
+                await fetch('/api/switch', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({group: groupName, node: targetNode})
+                });
+                fetchGroups(); // Refresh UI
+            } catch (err) {
+                alert("切換失敗: " + err);
+            }
+        }
+
+        async function togglePause() {
+            try {
+                const res = await fetch('/api/pause', {method: 'POST'});
+                const data = await res.json();
+                updatePauseUI(data.is_paused);
+            } catch (err) {}
+        }
+
+        function updatePauseUI(isPaused) {
+            const btn = document.getElementById('pauseBtn');
+            const icon = document.getElementById('pauseIcon');
+            const text = document.getElementById('pauseText');
+            if (isPaused) {
+                btn.style.background = 'linear-gradient(135deg, var(--success), #059669)';
+                icon.innerText = '▶️';
+                text.innerText = '恢復大腦';
+            } else {
+                btn.style.background = 'linear-gradient(135deg, var(--warning), #d97706)';
+                icon.innerText = '⏸️';
+                text.innerText = '暫停大腦';
+            }
         }
 
         async function fetchStats() {
@@ -741,20 +832,25 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
 
             try {
                 const res = await fetch('/api/history?node=' + encodeURIComponent(nodeName));
-                const history = await res.json();
+                const dataRaw = await res.json();
                 
-                if (!history || history.length === 0) {
+                if (!dataRaw || !dataRaw.ping || dataRaw.ping.length === 0) {
                     chartRow.innerHTML = '<td colspan="11" style="text-align:center; padding: 40px; color: var(--text-muted);">無歷史資料</td>';
                     return;
                 }
 
                 const ctx = document.getElementById('canvas-' + index).getContext('2d');
                 
-                const labels = history.map(h => {
+                const labels = dataRaw.ping.map(h => {
                     const d = new Date(h.Timestamp * 1000);
                     return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0');
                 });
-                const data = history.map(h => h.Delay);
+                const pingData = dataRaw.ping.map(h => h.Delay);
+
+                const browserData = dataRaw.ping.map(p => {
+                    const b = dataRaw.browser ? dataRaw.browser.find(b => Math.abs(b.Timestamp - p.Timestamp) < 300) : null;
+                    return b ? b.LoadTimeMs : null;
+                });
 
                 Chart.defaults.color = '#9ca3af';
                 Chart.defaults.font.family = "'Inter', sans-serif";
@@ -763,40 +859,71 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     type: 'line',
                     data: {
                         labels: labels,
-                        datasets: [{
-                            label: 'Ping (ms)',
-                            data: data,
-                            borderColor: '#8b5cf6',
-                            backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                            borderWidth: 3,
-                            pointBackgroundColor: '#c084fc',
-                            pointBorderColor: '#030712',
-                            pointBorderWidth: 2,
-                            pointRadius: 4,
-                            pointHoverRadius: 6,
-                            fill: true,
-                            tension: 0.4
-                        }]
+                        datasets: [
+                            {
+                                label: 'Ping (ms)',
+                                data: pingData,
+                                borderColor: '#8b5cf6',
+                                backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                                borderWidth: 3,
+                                pointBackgroundColor: '#c084fc',
+                                pointBorderColor: '#030712',
+                                pointBorderWidth: 2,
+                                pointRadius: 4,
+                                pointHoverRadius: 6,
+                                fill: true,
+                                tension: 0.4,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Browser Load (ms)',
+                                data: browserData,
+                                borderColor: '#10b981',
+                                backgroundColor: 'transparent',
+                                borderWidth: 3,
+                                pointBackgroundColor: '#10b981',
+                                pointBorderColor: '#030712',
+                                pointBorderWidth: 2,
+                                pointRadius: 6,
+                                pointHoverRadius: 8,
+                                fill: false,
+                                spanGaps: true,
+                                tension: 0.1,
+                                yAxisID: 'y2'
+                            }
+                        ]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
                         plugins: {
-                            legend: { display: false },
+                            legend: { 
+                                display: true, 
+                                position: 'top',
+                                labels: { color: '#e5e7eb', font: { family: "'Outfit', sans-serif" } }
+                            },
                             tooltip: {
                                 backgroundColor: 'rgba(17, 24, 39, 0.9)',
                                 titleFont: { size: 14, family: "'Outfit', sans-serif" },
                                 bodyFont: { size: 14, family: "'Inter', sans-serif" },
                                 padding: 12,
                                 cornerRadius: 8,
-                                displayColors: false
+                                displayColors: true
                             }
                         },
                         scales: {
                             y: { 
                                 beginAtZero: true, 
+                                position: 'left',
                                 grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
-                                title: { display: true, text: 'Delay (ms)', color: '#6b7280' }
+                                title: { display: true, text: 'Ping Delay (ms)', color: '#8b5cf6' }
+                            },
+                            y2: { 
+                                beginAtZero: true, 
+                                position: 'right',
+                                grid: { drawOnChartArea: false },
+                                title: { display: true, text: 'Browser Load (ms)', color: '#10b981' }
                             },
                             x: { 
                                 grid: { display: false }, 

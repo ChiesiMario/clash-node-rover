@@ -378,6 +378,38 @@ func (d *DB) GetNodeHistory(nodeName string, hours int) ([]PingLog, error) {
 	return history, nil
 }
 
+type BrowserLog struct {
+	Timestamp  int64
+	LoadTimeMs int
+}
+
+func (d *DB) GetBrowserHistory(nodeName string, hours int) ([]BrowserLog, error) {
+	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
+
+	query := `
+		SELECT timestamp, load_time_ms 
+		FROM browser_logs 
+		WHERE node_name = ? AND timestamp >= ? AND success = 1
+		ORDER BY timestamp ASC
+	`
+
+	rows, err := d.sqlDB.Query(query, nodeName, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []BrowserLog
+	for rows.Next() {
+		var log BrowserLog
+		if err := rows.Scan(&log.Timestamp, &log.LoadTimeMs); err == nil {
+			history = append(history, log)
+		}
+	}
+
+	return history, nil
+}
+
 func (d *DB) Cleanup(days int) error {
 	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
 

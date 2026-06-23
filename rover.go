@@ -31,6 +31,8 @@ type Rover struct {
 	ManualTrigger chan struct{}
 	Quit          chan struct{}
 	IsRunning     bool
+	IsPaused      bool
+	pauseMutex    sync.RWMutex
 }
 
 func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
@@ -45,9 +47,28 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		ManualTrigger:     make(chan struct{}, 1),
 		Quit:              make(chan struct{}, 1),
 		IsRunning:         false,
+		IsPaused:          false,
 	}
 	r.loadState()
 	return r
+}
+
+func (r *Rover) TogglePause() bool {
+	r.pauseMutex.Lock()
+	defer r.pauseMutex.Unlock()
+	r.IsPaused = !r.IsPaused
+	if r.IsPaused {
+		logWarning("⏸️ 系統已手動暫停，停止自動測速與切換")
+	} else {
+		logSuccess("▶️ 系統已手動恢復，繼續自動測速與切換")
+	}
+	return r.IsPaused
+}
+
+func (r *Rover) GetIsPaused() bool {
+	r.pauseMutex.RLock()
+	defer r.pauseMutex.RUnlock()
+	return r.IsPaused
 }
 
 func (r *Rover) loadState() {
@@ -275,6 +296,13 @@ type nodeStat struct {
 }
 
 func (r *Rover) runCheckCycle(isManual bool) {
+	if r.GetIsPaused() {
+		if isManual {
+			logWarning("系統目前處於暫停狀態，無法執行測速。")
+		}
+		return
+	}
+
 	if r.IsRunning {
 		return
 	}

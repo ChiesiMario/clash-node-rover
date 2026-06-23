@@ -143,8 +143,11 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	cutoff := time.Now().AddDate(0, 0, -days).Unix()
 	nowUnix := float64(time.Now().Unix())
 
-	// 半衰期 24 小時的指數衰減常數
-	lambda := math.Ln2 / (24.0 * 3600.0)
+	// Ping 的半衰期保持 2 小時 (因為測試頻率高，對短期網路波動極度敏感)
+	lambdaPing := math.Ln2 / (2.0 * 3600.0)
+
+	// 頻寬與瀏覽器面試的半衰期改為 24 小時 (因為面試頻率極低，需要較長期的記憶)
+	lambdaInterview := math.Ln2 / (24.0 * 3600.0)
 
 	// ========================================
 	// 第一層：撈取所有 ping_logs 原始行，在 Go 端計算
@@ -199,7 +202,7 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 
 		// 計算時間衰減權重
 		ageSeconds := nowUnix - float64(timestamp)
-		weight := math.Exp(-lambda * ageSeconds)
+		weight := math.Exp(-lambdaPing * ageSeconds)
 
 		nd.totalCount++
 		nd.totalWeightSum += weight
@@ -284,40 +287,66 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	// 第二層：頻寬加分（對數遞減 + 硬性上限）
 	// ========================================
 	bwQuery := `
-		SELECT node_name, AVG(speed_kbps), SUM(downloaded_bytes), MAX(timestamp) 
+		SELECT node_name, speed_kbps, downloaded_bytes, timestamp 
 		FROM bandwidth_logs 
-		WHERE timestamp >= ? 
-		GROUP BY node_name
+		WHERE timestamp >= ?
 	`
+	type bwRawData struct {
+		weightedSpeedSum float64
+		weightSum        float64
+		sumBytes         int64
+		maxTime          int64
+	}
+	bwData := make(map[string]*bwRawData)
+
 	bwRows, err := d.sqlDB.Query(bwQuery, cutoff)
 	if err == nil {
 		defer bwRows.Close()
 		for bwRows.Next() {
 			var name string
-			var avgBw sql.NullFloat64
-			var sumBytes sql.NullInt64
-			var maxTime sql.NullInt64
-			if err := bwRows.Scan(&name, &avgBw, &sumBytes, &maxTime); err == nil {
-				if sc, exists := scores[name]; exists {
-					if avgBw.Valid {
-						sc.Score -= 1000 // 扣除樂觀初始值
-						sc.AvgBandwidth = avgBw.Float64
-						// V4: 對數遞減，前 2 MB/s 加分最快，之後邊際遞減
-						// 上限 2000 分
-						bwBonus := int(math.Log2(1+sc.AvgBandwidth/1024.0) * 1000)
-						if bwBonus > 2000 {
-							bwBonus = 2000
-						}
-						sc.Score += bwBonus
-					}
-					if sumBytes.Valid {
-						sc.TotalConsumedBytes = sumBytes.Int64
-					}
-					if maxTime.Valid {
-						sc.LastBandwidthTime = maxTime.Int64
-					}
-					scores[name] = sc
+			var speed float64
+			var bytes int64
+			var timestamp int64
+			if err := bwRows.Scan(&name, &speed, &bytes, &timestamp); err == nil {
+				bd, exists := bwData[name]
+				if !exists {
+					bd = &bwRawData{}
+					bwData[name] = bd
 				}
+
+				ageSeconds := nowUnix - float64(timestamp)
+				weight := math.Exp(-lambdaInterview * ageSeconds)
+
+				bd.weightedSpeedSum += speed * weight
+				bd.weightSum += weight
+				bd.sumBytes += bytes
+				if timestamp > bd.maxTime {
+					bd.maxTime = timestamp
+				}
+			}
+		}
+
+		for name, bd := range bwData {
+			if sc, exists := scores[name]; exists && bd.weightSum > 0 {
+				sc.Score -= 1000 // 扣除樂觀初始值
+
+				// 貝式平滑先驗 (Bayesian Prior)：虛擬加入一筆優良的歷史成績
+				// 確保長久未測速 (weightSum 衰減趨近於 0) 的節點分數會緩慢回升，重新獲得被選為面試節點的機會
+				priorWeight := 0.5
+				priorSpeed := 10240.0 // 10 MB/s 樂觀速度
+
+				sc.AvgBandwidth = (bd.weightedSpeedSum + priorWeight*priorSpeed) / (bd.weightSum + priorWeight)
+				
+				// V4: 對數遞減，前 2 MB/s 加分最快，之後邊際遞減
+				// 上限 2000 分
+				bwBonus := int(math.Log2(1+sc.AvgBandwidth/1024.0) * 1000)
+				if bwBonus > 2000 {
+					bwBonus = 2000
+				}
+				sc.Score += bwBonus
+				sc.TotalConsumedBytes = bd.sumBytes
+				sc.LastBandwidthTime = bd.maxTime
+				scores[name] = sc
 			}
 		}
 	}
@@ -326,48 +355,75 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	// 第三層：瀏覽器測試修正（連續懲罰函數）
 	// ========================================
 	brQuery := `
-		SELECT node_name, AVG(CASE WHEN success THEN 1.0 ELSE 0.0 END), AVG(CASE WHEN success THEN load_time_ms ELSE NULL END), MAX(timestamp)
+		SELECT node_name, success, load_time_ms, timestamp
 		FROM browser_logs 
-		WHERE timestamp >= ? 
-		GROUP BY node_name
+		WHERE timestamp >= ?
 	`
+	type brRawData struct {
+		weightedSuccessSum  float64
+		weightSum           float64
+		weightedLoadTimeSum float64
+		loadTimeWeightSum   float64
+		maxTime             int64
+	}
+	brData := make(map[string]*brRawData)
+
 	brRows, err := d.sqlDB.Query(brQuery, cutoff)
 	if err == nil {
 		defer brRows.Close()
 		for brRows.Next() {
 			var name string
-			var brSuccessRate sql.NullFloat64
-			var avgLoad sql.NullFloat64
-			var maxTime sql.NullInt64
-			if err := brRows.Scan(&name, &brSuccessRate, &avgLoad, &maxTime); err == nil {
-				if sc, exists := scores[name]; exists {
-					sc.BrowserTested = true
-					if brSuccessRate.Valid || avgLoad.Valid {
-						sc.Score -= 5500 // 扣除樂觀初始值
-					}
-
-					if brSuccessRate.Valid {
-						sc.BrowserSuccessRate = brSuccessRate.Float64
-						// V4: 網頁成功率作為核心得分項目，滿分 4000
-						successBonus := int(brSuccessRate.Float64 * 4000)
-						sc.Score += successBonus
-					}
-					if avgLoad.Valid {
-						sc.AvgBrowserLoadTime = avgLoad.Float64
-						// V4: 載入時間加分：越快分數越高。基準為 5 秒(5000ms)，每快 100ms 加 60 分
-						bonus := int(5000-avgLoad.Float64) * 6 / 10
-						if bonus > 3000 {
-							bonus = 3000
-						}
-						if bonus > 0 {
-							sc.Score += bonus
-						}
-					}
-					if maxTime.Valid {
-						sc.LastBrowserTime = maxTime.Int64
-					}
-					scores[name] = sc
+			var success bool
+			var loadTime int
+			var timestamp int64
+			if err := brRows.Scan(&name, &success, &loadTime, &timestamp); err == nil {
+				br, exists := brData[name]
+				if !exists {
+					br = &brRawData{}
+					brData[name] = br
 				}
+
+				ageSeconds := nowUnix - float64(timestamp)
+				weight := math.Exp(-lambdaInterview * ageSeconds)
+
+				br.weightSum += weight
+				if success {
+					br.weightedSuccessSum += weight
+					br.weightedLoadTimeSum += float64(loadTime) * weight
+					br.loadTimeWeightSum += weight
+				}
+				if timestamp > br.maxTime {
+					br.maxTime = timestamp
+				}
+			}
+		}
+
+		for name, br := range brData {
+			if sc, exists := scores[name]; exists && br.weightSum > 0 {
+				sc.BrowserTested = true
+				sc.Score -= 5500 // 扣除樂觀初始值
+
+				// 貝式平滑先驗 (Bayesian Prior)：虛擬加入一筆成功的歷史成績
+				priorWeight := 0.5
+				priorSuccess := 1.0
+				priorLoadTime := 1000.0 // 樂觀載入時間 1000ms
+
+				sc.BrowserSuccessRate = (br.weightedSuccessSum + priorWeight*priorSuccess) / (br.weightSum + priorWeight)
+				successBonus := int(sc.BrowserSuccessRate * 4000)
+				sc.Score += successBonus
+
+				totalLoadTimeWeight := br.loadTimeWeightSum + priorWeight
+				sc.AvgBrowserLoadTime = (br.weightedLoadTimeSum + priorWeight*priorLoadTime) / totalLoadTimeWeight
+				bonus := int(5000-sc.AvgBrowserLoadTime) * 6 / 10
+				if bonus > 3000 {
+					bonus = 3000
+				}
+				if bonus > 0 {
+					sc.Score += bonus
+				}
+				
+				sc.LastBrowserTime = br.maxTime
+				scores[name] = sc
 			}
 		}
 	}

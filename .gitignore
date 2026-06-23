@@ -17,3 +17,6 @@ rover_config.yaml.bak
 *.bak
 rover.log
 rover.db
+
+*.db-shm
+*.db-wal

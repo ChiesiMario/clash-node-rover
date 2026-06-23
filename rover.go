@@ -579,6 +579,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
 		opts := append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
+			chromedp.Flag("disable-cache", true),
+			chromedp.Flag("incognito", true), // This provides general incognito mode instead of individual profiles
 		)
 		browserAllocCtx, browserAllocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
 		defer browserAllocCancel()
@@ -740,8 +742,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				logInfo("開始使用無頭瀏覽器測試網頁連通性: %s%s...", formatNode(candidate), tag)
 
 				for _, targetURL := range r.GetConfig().BrowserTestURLs {
-					// 使用共用的 Chrome 資源池，並強制開啟無痕隔離模式 (清除/隔離緩存)
-					ctx, cancelCtx := chromedp.NewContext(browserAllocCtx, chromedp.WithNewBrowserContext())
+					// 直接從 Allocator 建立新 Tab 測速，避免 Incognito Profile 建立失敗的問題
+					ctx, cancelCtx := chromedp.NewContext(browserAllocCtx)
 
 					ctx, cancelTimeout := context.WithTimeout(ctx, 15*time.Second)
 

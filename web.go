@@ -80,15 +80,44 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 			return
 		}
 
+		highestInGroups := make(map[string][]string)
+		for _, groupName := range rover.GetConfig().TargetGroups {
+			g, err := rover.GetAPI().GetProxyGroup(groupName)
+			if err == nil {
+				highestScore := -999999
+				highestNode := ""
+				for _, name := range g.All {
+					if sc, ok := scores[name]; ok && sc.Score > highestScore {
+						highestScore = sc.Score
+						highestNode = name
+					}
+				}
+				if highestNode != "" {
+					highestInGroups[highestNode] = append(highestInGroups[highestNode], groupName)
+				}
+			}
+		}
+
 		type StatNode struct {
 			NodeScore
-			Provider string `json:"provider"`
+			Provider          string   `json:"provider"`
+			HighestInGroups   []string `json:"highest_in_groups"`
+			LastInterviewTime int64    `json:"last_interview_time"`
+			CooldownMinutes   int      `json:"cooldown_minutes"`
 		}
 		list := make([]StatNode, 0)
 		for _, sc := range scores {
+			t := rover.GetLastInterviewTime(sc.Name)
+			var lastInt int64
+			if !t.IsZero() {
+				lastInt = t.Unix()
+			}
 			list = append(list, StatNode{
-				NodeScore: sc,
-				Provider:  GetNodeProvider(sc.Name),
+				NodeScore:         sc,
+				Provider:          GetNodeProvider(sc.Name),
+				HighestInGroups:   highestInGroups[sc.Name],
+				LastInterviewTime: lastInt,
+				CooldownMinutes:   rover.GetConfig().ExplorationCooldown,
 			})
 		}
 
@@ -715,12 +744,14 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                     <table id="statsTable">
                         <thead>
                             <tr>
-                                <th>Rank</th>
-                                <th>Node Name</th>
-                                <th>Score</th>
-                                <th>Ping Success</th>
-                                <th>Web Success</th>
-                                <th>Web Load</th>
+                                <th>排名</th>
+                                <th>節點名稱</th>
+                                <th>綜合評分</th>
+                                <th>Ping 成功率</th>
+                                <th>網頁成功率</th>
+                                <th>網頁載入</th>
+                                <th>上次測試時間</th>
+                                <th>上次面試時間</th>
                             </tr>
                         </thead>
                         <tbody id="tbody">
@@ -888,14 +919,36 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
                         }
                     }
 
-                    let browserTimeStr = node.LastBrowserTime ? '<span style="font-size: 0.8rem; color: var(--text-muted); margin-left: 8px;">(' + timeAgo(node.LastBrowserTime) + ')</span>' : '';
+                    let lastTestTime = node.LastBandwidthTime || 0;
+                    if (node.LastBrowserTime > lastTestTime) {
+                        lastTestTime = node.LastBrowserTime;
+                    }
+                    let lastTestStr = lastTestTime ? timeAgo(lastTestTime) + ' (' + new Date(lastTestTime * 1000).toLocaleTimeString('zh-TW', {hour: '2-digit', minute:'2-digit', hour12: false}) + ')' : '<span style="color:var(--text-muted)">未測速</span>';
+
+                    let interviewStr = '<span style="color:var(--text-muted)">從未面試</span>';
+                    if (node.last_interview_time > 0) {
+                        const diffMin = Math.floor(Date.now() / 60000) - Math.floor(node.last_interview_time / 60);
+                        const remainMin = node.cooldown_minutes - diffMin;
+                        if (remainMin <= 0) {
+                            interviewStr = timeAgo(node.last_interview_time) + ' <span style="color:var(--success);font-size:0.8rem;">(冷卻完畢)</span>';
+                        } else {
+                            interviewStr = timeAgo(node.last_interview_time) + ' <span style="color:var(--warning);font-size:0.8rem;">(冷卻還剩 ' + remainMin + ' 分鐘)</span>';
+                        }
+                    }
+
+                    let groupBadges = '';
+                    if (node.highest_in_groups && node.highest_in_groups.length > 0) {
+                        groupBadges = node.highest_in_groups.map(g => '<span class="badge-success" style="margin-left:8px; padding: 2px 6px; font-size: 0.75rem; border-radius: 4px; display: inline-flex; align-items: center;"><svg style="width:12px;height:12px;margin-right:2px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>「' + escapeHtml(g) + '」冠軍</span>').join('');
+                    }
 
                     tr.innerHTML = '<td class="rank ' + rankClass + '">#' + (index + 1) + '</td>' +
-                        '<td style="font-weight: 600; color: #fff;">' + node.Name + providerTag + '</td>' +
+                        '<td style="font-weight: 600; color: #fff;">' + escapeHtml(node.Name) + providerTag + groupBadges + '</td>' +
                         '<td><span class="score-badge">' + node.Score + '</span></td>' +
                         '<td class="success-rate" style="color: ' + successColor + ';">' + (node.SuccessRate * 100).toFixed(1) + '%</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600;">' + webSuccessStr + browserTimeStr + '</td>' +
-                        '<td style="font-family: \'Outfit\', sans-serif;">' + webLoadStr + browserTimeStr + '</td>';
+                        '<td style="font-family: \'Outfit\', sans-serif; font-weight: 600;">' + webSuccessStr + '</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif;">' + webLoadStr + '</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif; font-size: 0.85rem;">' + lastTestStr + '</td>' +
+                        '<td style="font-family: \'Outfit\', sans-serif; font-size: 0.85rem;">' + interviewStr + '</td>';
                 });
             } catch (err) {}
         }
@@ -940,14 +993,14 @@ func handleIndex(w http.ResponseWriter, r *http.Request) {
             let jitterColor = node.Jitter > 150 ? 'var(--danger)' : (node.Jitter > 50 ? 'var(--warning)' : '#9ca3af');
 
             let detailsHtml = '<div style="display: flex; flex-wrap: wrap; gap: 20px; padding: 20px; background: rgba(0,0,0,0.15); border-radius: 12px; margin-bottom: 15px; border: 1px solid rgba(255,255,255,0.05);">' +
-                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Avg Ping</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + node.AvgDelay.toFixed(0) + ' ms' + pingTimeStr + '</div></div>' +
-                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Jitter (σ)</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:' + jitterColor + '; font-weight:600;">' + node.Jitter + ' ms</div></div>' +
-                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Samples</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + (node.SampleCount || 0) + '</div></div>' +
-                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Avg Speed</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + speedStr + bwTimeStr + '</div></div>' +
-                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">Data Used</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + consumedStr + bwTimeStr + '</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">平均延遲</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + node.AvgDelay.toFixed(0) + ' ms</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">網路抖動 (σ)</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:' + jitterColor + '; font-weight:600;">' + node.Jitter + ' ms</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">樣本數</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + (node.SampleCount || 0) + '</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">平均測速</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + speedStr + '</div></div>' +
+                '<div style="flex: 1; min-width: 140px;"><div style="color:var(--text-muted); font-size:0.85rem; margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:1px;">已用流量</div><div style="font-size:1.1rem; font-family:\'Outfit\',sans-serif; color:#fff;">' + consumedStr + '</div></div>' +
             '</div>';
 
-            chartRow.innerHTML = '<td colspan="6"><div style="padding: 10px;">' + detailsHtml + '<div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></div></td>';
+            chartRow.innerHTML = '<td colspan="8"><div style="padding: 10px;">' + detailsHtml + '<div class="chart-container"><canvas id="canvas-' + index + '"></canvas></div></div></td>';
             tr.parentNode.insertBefore(chartRow, tr.nextSibling);
 
             try {

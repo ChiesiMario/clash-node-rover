@@ -26,6 +26,7 @@ type Rover struct {
 	lastCheckTime     map[string]time.Time
 	lastBandwidthTest map[string]time.Time
 	lastInterviewTime map[string]time.Time
+	stateMutex        sync.RWMutex
 
 	// 進階功能控制
 	ManualTrigger chan struct{}
@@ -93,6 +94,16 @@ func (r *Rover) GetConfig() *Config {
 	r.cfgMutex.RLock()
 	defer r.cfgMutex.RUnlock()
 	return r.cfg
+}
+
+func (r *Rover) GetAPI() *APIClient {
+	return r.api
+}
+
+func (r *Rover) GetLastInterviewTime(node string) time.Time {
+	r.stateMutex.RLock()
+	defer r.stateMutex.RUnlock()
+	return r.lastInterviewTime[node]
 }
 
 func (r *Rover) watchConfig() {
@@ -599,7 +610,10 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				continue
 			}
 			// 檢查面試冷卻期
-			if isManual || time.Since(r.lastInterviewTime[name]) >= explorationDuration {
+			r.stateMutex.RLock()
+			lastInt := r.lastInterviewTime[name]
+			r.stateMutex.RUnlock()
+			if isManual || time.Since(lastInt) >= explorationDuration {
 				if sc.BaseScore > highestBaseScore {
 					highestBaseScore = sc.BaseScore
 					explorationCandidate = name
@@ -674,7 +688,9 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				}
 			}
 
+			r.stateMutex.Lock()
 			r.lastInterviewTime[candidate] = time.Now()
+			r.stateMutex.Unlock()
 			alreadyTestedInCycle[candidate] = true
 
 			// 1. 執行極限頻寬測速 (受 bandwidth_test_interval 限制)

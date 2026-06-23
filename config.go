@@ -98,7 +98,7 @@ web_port: 9091
 clash_proxy_url: "http://127.0.0.1:7890"
 
 # 真實頻寬測速用的下載檔案網址 (建議使用支援 HTTPS 的高頻寬測速專用檔案)
-bandwidth_test_url: "https://speed.cloudflare.com/__down?bytes=10485760"
+bandwidth_test_url: "https://speed.cloudflare.com/__down?bytes=15728640"
 
 # 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
 bandwidth_test_interval: 60
@@ -230,7 +230,7 @@ func loadConfig() (*Config, error) {
 		cfg.ClashProxyURL = "http://127.0.0.1:7890"
 	}
 	if cfg.BandwidthTestURL == "" {
-		cfg.BandwidthTestURL = "http://speedtest.tele2.net/1MB.zip"
+		cfg.BandwidthTestURL = "https://speed.cloudflare.com/__down?bytes=15728640"
 	}
 	if cfg.BandwidthTestInterval <= 0 {
 		cfg.BandwidthTestInterval = 60
@@ -308,7 +308,7 @@ func promptForConfig() (*Config, error) {
 		MaxConcurrent:          10,
 		WebPort:                9091,
 		ClashProxyURL:          "http://127.0.0.1:7890",
-		BandwidthTestURL:       "http://speedtest.tele2.net/1MB.zip",
+		BandwidthTestURL:       "https://speed.cloudflare.com/__down?bytes=15728640",
 		ExplorationCooldown:    60,
 		MaxBackoffMinutes:      30,
 		EnableFailover:         true,

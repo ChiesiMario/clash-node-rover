@@ -121,6 +121,32 @@ func (r *Rover) checkBrowserTestURLsChanged() {
 	r.db.SetMetadata("browser_test_urls", currentURLs)
 }
 
+func (r *Rover) checkClashStatus() bool {
+	_, err := r.api.GetProxyProviders()
+	if err != nil {
+		logWarning("Clash API 連線失敗或不在線: %v", err)
+		return false
+	}
+	
+	for _, groupName := range r.GetConfig().TargetGroups {
+		_, err := r.api.GetProxyGroup(groupName)
+		if err != nil {
+			logWarning("群組 [%s] 不存在或查詢失敗: %v", groupName, err)
+			return false
+		}
+	}
+	
+	if r.GetConfig().DedicatedTestGroup != "" {
+		_, err := r.api.GetProxyGroup(r.GetConfig().DedicatedTestGroup)
+		if err != nil {
+			logWarning("獨立測速群組 [%s] 不存在或查詢失敗: %v", r.GetConfig().DedicatedTestGroup, err)
+			return false
+		}
+	}
+	
+	return true
+}
+
 func (r *Rover) Start() {
 	logHeader("Clash Node Rover 啟動")
 
@@ -137,38 +163,97 @@ func (r *Rover) Start() {
 		logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
 	}
 
-	r.runCheckCycle(false) // 啟動時先跑一次
-
-	if r.GetConfig().EnableFailover {
-		go r.runFailoverWatchdog()
-	}
-
-	ticker := time.NewTicker(r.GetConfig().CheckInterval)
-	defer ticker.Stop()
-
 	// 每天執行一次資料庫瘦身
 	cleanupTicker := time.NewTicker(24 * time.Hour)
 	defer cleanupTicker.Stop()
 
 	for {
-		select {
-		case <-ticker.C:
-			r.runCheckCycle(false)
-		case <-cleanupTicker.C:
-			if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
-				logError("資料庫自動瘦身失敗: %v", err)
-			} else {
-				logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
+		// 外層迴圈: 檢查先決條件 (Recovery Loop)
+		for !r.checkClashStatus() {
+			logWarning("偵測到 Clash API 異常或群組設定錯誤，進入 60 秒等待退避模式...")
+			select {
+			case <-r.Quit:
+				logWarning("背景測速引擎已停止。")
+				return
+			case <-time.After(60 * time.Second):
+				// retry
 			}
-		case <-r.ManualTrigger:
-			logInfo("收到手動測速信號，立即執行！")
-			ticker.Stop()
-			r.runCheckCycle(true)
-			ticker.Reset(r.GetConfig().CheckInterval)
-		case <-r.Quit:
-			logWarning("背景測速引擎已停止。")
-			return
 		}
+
+		logSuccess("Clash API 已連線且群組設定無誤，開始正常執行。")
+
+		// 內層迴圈: 正常任務執行 (Active Loop)
+		watchdogCtx, watchdogCancel := context.WithCancel(context.Background())
+		if r.GetConfig().EnableFailover {
+			go r.runFailoverWatchdog(watchdogCtx)
+		}
+
+		apiBroken := make(chan struct{}, 1)
+		
+		// 啟動背景健康監控，每 3 秒檢查一次，確保能在中途失聯時立刻發現
+		go func() {
+			healthTicker := time.NewTicker(3 * time.Second)
+			defer healthTicker.Stop()
+			for {
+				select {
+				case <-watchdogCtx.Done():
+					return
+				case <-healthTicker.C:
+					// 進行靜默檢查（若在此期間失聯則發送信號）
+					if !r.checkClashStatus() {
+						select {
+						case apiBroken <- struct{}{}:
+						default:
+						}
+						return
+					}
+				}
+			}
+		}()
+
+		// 進入正常模式時先跑一次
+		r.runCheckCycle(false)
+
+		ticker := time.NewTicker(r.GetConfig().CheckInterval)
+		broken := false
+
+		for !broken {
+			select {
+			case <-apiBroken:
+				broken = true
+				break
+			case <-r.Quit:
+				watchdogCancel()
+				ticker.Stop()
+				logWarning("背景測速引擎已停止。")
+				return
+			case <-ticker.C:
+				if !r.checkClashStatus() {
+					broken = true
+					break
+				}
+				r.runCheckCycle(false)
+			case <-cleanupTicker.C:
+				if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
+					logError("資料庫自動瘦身失敗: %v", err)
+				} else {
+					logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
+				}
+			case <-r.ManualTrigger:
+				logInfo("收到手動測速信號，立即執行！")
+				if !r.checkClashStatus() {
+					broken = true
+					break
+				}
+				ticker.Stop()
+				r.runCheckCycle(true)
+				ticker.Reset(r.GetConfig().CheckInterval)
+			}
+		}
+
+		ticker.Stop()
+		watchdogCancel()
+		logWarning("中斷正常執行週期，準備重新進行 60 秒退避檢查...")
 	}
 }
 
@@ -214,7 +299,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			}
 		}
 	} else {
-		logWarning("無法取得 Provider 資訊: %v", err)
+		logWarning("無法取得 Provider 資訊: %v，本次測速作廢。", err)
+		return
 	}
 
 	for _, groupName := range r.GetConfig().TargetGroups {
@@ -300,10 +386,20 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			close(stats)
 		}()
 
+		var collectedStats []nodeStat
+		for s := range stats {
+			collectedStats = append(collectedStats, s)
+		}
+
+		if !r.checkClashStatus() {
+			logError("🚨 Ping 測試期間偵測到 Clash API 失聯，本次測速結果作廢！")
+			return
+		}
+
 		successCount := 0
 		failCount := 0
 		var successfulStats []nodeStat
-		for s := range stats {
+		for _, s := range collectedStats {
 			statResultsMap[s.Name] = s
 			success := (s.Err == nil && s.Delay > 0)
 			if success {
@@ -513,6 +609,10 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			if candidate != originalTarget {
 				err := r.api.SelectProxy(borrowGroup, candidate)
 				if err != nil {
+					if !r.checkClashStatus() {
+						logError("🚨 準備切換至測試節點時偵測到 Clash API 失聯，本次循環作廢！")
+						return
+					}
 					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("測速：無法切換至測試節點 %s", formatNode(candidate)))
 					continue
 				}
@@ -638,7 +738,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	}
 }
 
-func (r *Rover) runFailoverWatchdog() {
+func (r *Rover) runFailoverWatchdog(ctx context.Context) {
 	logInfo("啟動秒級急救機制 Watchdog (偵測間隔: %s 秒)", formatVal(r.GetConfig().FailoverInterval))
 	ticker := time.NewTicker(time.Duration(r.GetConfig().FailoverInterval) * time.Second)
 	defer ticker.Stop()
@@ -648,6 +748,9 @@ func (r *Rover) runFailoverWatchdog() {
 	for {
 		select {
 		case <-r.Quit:
+			return
+		case <-ctx.Done():
+			logInfo("停止秒級急救機制 Watchdog (Context Cancelled)")
 			return
 		case <-ticker.C:
 			if r.IsRunning {

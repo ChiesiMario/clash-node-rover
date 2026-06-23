@@ -108,6 +108,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 			HighestInGroups   []string `json:"highest_in_groups"`
 			LastInterviewTime int64    `json:"last_interview_time"`
 			CooldownMinutes   int      `json:"cooldown_minutes"`
+			BackoffRemaining  int      `json:"backoff_remaining"`
 		}
 		list := make([]StatNode, 0)
 		for _, sc := range scores {
@@ -122,6 +123,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 				HighestInGroups:   highestInGroups[sc.Name],
 				LastInterviewTime: lastInt,
 				CooldownMinutes:   rover.GetConfig().ExplorationCooldown,
+				BackoffRemaining:  rover.GetBackoffRemaining(sc.Name),
 			})
 		}
 

@@ -637,6 +637,9 @@
                     if (node.highest_in_groups && node.highest_in_groups.length > 0) {
                         groupBadges = node.highest_in_groups.map(g => '<div class="badge success" style="margin-top:4px; margin-left:4px; font-size: 10px;"><span class="material-symbols-outlined" style="font-size:12px">workspace_premium</span> ' + escapeHtml(g) + '</div>').join('');
                     }
+                    if (node.backoff_remaining && node.backoff_remaining > 0) {
+                        groupBadges += '<div class="badge error" style="margin-top:4px; margin-left:4px; font-size: 10px;"><span class="material-symbols-outlined" style="font-size:12px">timer_off</span> 退避中 (' + node.backoff_remaining + ' 輪)</div>';
+                    }
 
                     let lastTestTime = Math.max(node.LastBandwidthTime || 0, node.LastBrowserTime || 0);
                     let lastTestStr = lastTestTime ? timeAgo(lastTestTime) : '-';

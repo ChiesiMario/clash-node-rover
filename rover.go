@@ -108,6 +108,12 @@ func (r *Rover) GetLastInterviewTime(node string) time.Time {
 	return r.lastInterviewTime[node]
 }
 
+func (r *Rover) GetBackoffRemaining(node string) int {
+	r.stateMutex.RLock()
+	defer r.stateMutex.RUnlock()
+	return r.backoffRemaining[node]
+}
+
 func (r *Rover) watchConfig() {
 	var lastModTime time.Time
 	info, err := os.Stat(ConfigFile)
@@ -364,17 +370,30 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	}
 
 	var nodesToTest []string
+	var backedOffNodes []string
 	totalBackoff := 0
 
 	// 純次數退避檢查
+	r.stateMutex.Lock()
 	for name := range uniqueNodes {
 		if r.backoffRemaining[name] > 0 {
-			r.backoffRemaining[name]--
+			backedOffNodes = append(backedOffNodes, name)
 			totalBackoff++
 			continue
 		}
 		nodesToTest = append(nodesToTest, name)
 	}
+	r.stateMutex.Unlock()
+
+	defer func() {
+		r.stateMutex.Lock()
+		for _, name := range backedOffNodes {
+			if r.backoffRemaining[name] > 0 {
+				r.backoffRemaining[name]--
+			}
+		}
+		r.stateMutex.Unlock()
+	}()
 
 	statResultsMap := make(map[string]nodeStat)
 
@@ -434,11 +453,11 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		for _, s := range collectedStats {
 			statResultsMap[s.Name] = s
 			success := (s.Err == nil && s.Delay > 0)
+			
+			r.stateMutex.Lock()
 			if success {
 				r.failedConsec[s.Name] = 0
 				r.backoffRemaining[s.Name] = 0 // 成功時重置退避
-				successCount++
-				successfulStats = append(successfulStats, s)
 			} else {
 				r.failedConsec[s.Name]++
 				// 計算下一次的退避循環次數
@@ -448,7 +467,13 @@ func (r *Rover) runCheckCycle(isManual bool) {
 					skipCycles = r.GetConfig().MaxBackoffCycles
 				}
 				r.backoffRemaining[s.Name] = skipCycles
+			}
+			r.stateMutex.Unlock()
 
+			if success {
+				successCount++
+				successfulStats = append(successfulStats, s)
+			} else {
 				failCount++
 				if s.Err != nil {
 					logMuted("  - ❌ [失敗] %s: %v", formatNode(s.Name), s.Err)

@@ -113,7 +113,7 @@ func (c *APIClient) SelectProxy(groupName, proxyName string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	req, err := http.NewRequest("PUT", u, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return err

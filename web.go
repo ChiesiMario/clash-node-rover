@@ -148,7 +148,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 		historyCopy := make([]WebLogEntry, len(logHistory))
 		copy(historyCopy, logHistory)
 		logHistoryMutex.Unlock()
-		
+
 		conn.WriteJSON(map[string]interface{}{
 			"type":    "log_history",
 			"history": historyCopy,

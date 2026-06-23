@@ -19,32 +19,32 @@ type NotificationConfig struct {
 }
 
 type Config struct {
-	APIUrl                 string        `yaml:"api_url"`
-	APISecret              string        `yaml:"api_secret"`
-	CheckInterval          time.Duration `yaml:"check_interval"`
-	TargetGroups           []string      `yaml:"target_groups"`
-	DedicatedTestGroup     string        `yaml:"dedicated_test_group"`
-	TestURLs               []string      `yaml:"test_urls"`
-	TestTimeout            time.Duration `yaml:"test_timeout"`
-	DelayTolerance         int           `yaml:"delay_tolerance"` // milliseconds
-	HistoryDays            int           `yaml:"history_days"`    // days
-	CleanupDays            int           `yaml:"cleanup_days"`    // days
-	MaxConcurrent          int           `yaml:"max_concurrent"`
-	WebPort                int           `yaml:"web_port"`
-	ClashProxyURL          string        `yaml:"clash_proxy_url"`
-	BandwidthTestURL       string        `yaml:"bandwidth_test_url"`
-	BandwidthTestInterval  int           `yaml:"bandwidth_test_interval"` // minutes
-	ExplorationCooldown    int           `yaml:"exploration_cooldown_minutes"` // minutes
-	MaxBackoffMinutes      int           `yaml:"max_backoff_minutes"`
-	
-	EnableFailover         bool          `yaml:"enable_failover"`
-	FailoverInterval       int           `yaml:"failover_interval"` // seconds
-	FailoverMaxFails       int           `yaml:"failover_max_fails"`
+	APIUrl                string        `yaml:"api_url"`
+	APISecret             string        `yaml:"api_secret"`
+	CheckInterval         time.Duration `yaml:"check_interval"`
+	TargetGroups          []string      `yaml:"target_groups"`
+	DedicatedTestGroup    string        `yaml:"dedicated_test_group"`
+	TestURLs              []string      `yaml:"test_urls"`
+	TestTimeout           time.Duration `yaml:"test_timeout"`
+	DelayTolerance        int           `yaml:"delay_tolerance"` // milliseconds
+	HistoryDays           int           `yaml:"history_days"`    // days
+	CleanupDays           int           `yaml:"cleanup_days"`    // days
+	MaxConcurrent         int           `yaml:"max_concurrent"`
+	WebPort               int           `yaml:"web_port"`
+	ClashProxyURL         string        `yaml:"clash_proxy_url"`
+	BandwidthTestURL      string        `yaml:"bandwidth_test_url"`
+	BandwidthTestInterval int           `yaml:"bandwidth_test_interval"`      // minutes
+	ExplorationCooldown   int           `yaml:"exploration_cooldown_minutes"` // minutes
+	MaxBackoffMinutes     int           `yaml:"max_backoff_minutes"`
 
-	EnableBrowserTest      bool          `yaml:"enable_browser_test"`
-	BrowserTestURLs        []string      `yaml:"browser_test_urls"`
+	EnableFailover   bool `yaml:"enable_failover"`
+	FailoverInterval int  `yaml:"failover_interval"` // seconds
+	FailoverMaxFails int  `yaml:"failover_max_fails"`
 
-	Notifications          NotificationConfig `yaml:"notifications"`
+	EnableBrowserTest bool     `yaml:"enable_browser_test"`
+	BrowserTestURLs   []string `yaml:"browser_test_urls"`
+
+	Notifications NotificationConfig `yaml:"notifications"`
 }
 
 const ConfigFile = "rover_config.yaml"
@@ -152,20 +152,24 @@ func loadConfig() (*Config, error) {
 			var cfg Config
 			// 為了相容 JSON 欄位，我們暫時用一個匿名的 struct 來解析舊格式
 			var oldCfg struct {
-				APIUrl                 string        `json:"api_url"`
-				APISecret              string        `json:"api_secret"`
-				CheckInterval          time.Duration `json:"check_interval"`
-				TargetGroup            string        `json:"target_group"`
-				TargetGroups           []string      `json:"target_groups"`
+				APIUrl        string        `json:"api_url"`
+				APISecret     string        `json:"api_secret"`
+				CheckInterval time.Duration `json:"check_interval"`
+				TargetGroup   string        `json:"target_group"`
+				TargetGroups  []string      `json:"target_groups"`
 			}
 			json.Unmarshal(data, &oldCfg)
-			
+
 			cfg.APIUrl = oldCfg.APIUrl
-			if cfg.APIUrl == "" { cfg.APIUrl = "http://127.0.0.1:9090" }
+			if cfg.APIUrl == "" {
+				cfg.APIUrl = "http://127.0.0.1:9090"
+			}
 			cfg.APISecret = oldCfg.APISecret
 			cfg.CheckInterval = oldCfg.CheckInterval
-			if cfg.CheckInterval == 0 { cfg.CheckInterval = 60 * time.Second }
-			
+			if cfg.CheckInterval == 0 {
+				cfg.CheckInterval = 60 * time.Second
+			}
+
 			// 自動將單一群組轉換為陣列
 			if len(oldCfg.TargetGroups) > 0 {
 				cfg.TargetGroups = oldCfg.TargetGroups
@@ -174,7 +178,7 @@ func loadConfig() (*Config, error) {
 			} else {
 				cfg.TargetGroups = []string{"🤖 Node Rover"}
 			}
-			
+
 			// 寫入帶有註解的 YAML
 			writeYAMLConfig(&cfg)
 			// 刪除舊檔案
@@ -248,13 +252,13 @@ func loadConfig() (*Config, error) {
 	if cfg.FailoverMaxFails <= 0 {
 		cfg.FailoverMaxFails = 2
 	}
-	// EnableFailover is a boolean, so false is default. For old users upgrading, 
+	// EnableFailover is a boolean, so false is default. For old users upgrading,
 	// we might want it true, but they will have to manually add it or use defaults.
 	// We'll assume if FailoverInterval was not set, they are upgrading, but we can't easily distinguish.
 	// Actually we'll default EnableFailover to true if FailoverInterval was 0 (meaning missing).
 	if cfg.FailoverInterval == 3 && cfg.FailoverMaxFails == 2 {
 		// Just to be safe, if we set the defaults above, maybe we should also default EnableFailover to true.
-		// However, missing bool in YAML parses as false. 
+		// However, missing bool in YAML parses as false.
 		// We'll leave it as is, or we can check a string pointer if we wanted. Let's not overwrite if they explicitly put false.
 	}
 
@@ -296,26 +300,26 @@ func promptForConfig() (*Config, error) {
 	}
 
 	cfg := &Config{
-		APIUrl:                 apiUrl,
-		APISecret:              apiSecret,
-		CheckInterval:          time.Duration(interval) * time.Second,
-		TargetGroups:           []string{"🤖 Node Rover"},
-		TestURLs:               []string{"http://www.gstatic.com/generate_204", "http://cp.cloudflare.com/generate_204", "http://www.apple.com/library/test/success.html"},
-		TestTimeout:            5 * time.Second,
-		DelayTolerance:         100,
-		HistoryDays:            7,
-		CleanupDays:            7,
-		MaxConcurrent:          10,
-		WebPort:                9091,
-		ClashProxyURL:          "http://127.0.0.1:7890",
-		BandwidthTestURL:       "https://speed.cloudflare.com/__down?bytes=15728640",
-		ExplorationCooldown:    60,
-		MaxBackoffMinutes:      30,
-		EnableFailover:         true,
-		FailoverInterval:       3,
-		FailoverMaxFails:       2,
-		EnableBrowserTest:      true,
-		BrowserTestURLs:        []string{"https://www.google.com", "https://www.youtube.com"},
+		APIUrl:              apiUrl,
+		APISecret:           apiSecret,
+		CheckInterval:       time.Duration(interval) * time.Second,
+		TargetGroups:        []string{"🤖 Node Rover"},
+		TestURLs:            []string{"http://www.gstatic.com/generate_204", "http://cp.cloudflare.com/generate_204", "http://www.apple.com/library/test/success.html"},
+		TestTimeout:         5 * time.Second,
+		DelayTolerance:      100,
+		HistoryDays:         7,
+		CleanupDays:         7,
+		MaxConcurrent:       10,
+		WebPort:             9091,
+		ClashProxyURL:       "http://127.0.0.1:7890",
+		BandwidthTestURL:    "https://speed.cloudflare.com/__down?bytes=15728640",
+		ExplorationCooldown: 60,
+		MaxBackoffMinutes:   30,
+		EnableFailover:      true,
+		FailoverInterval:    3,
+		FailoverMaxFails:    2,
+		EnableBrowserTest:   true,
+		BrowserTestURLs:     []string{"https://www.google.com", "https://www.youtube.com"},
 		Notifications: NotificationConfig{
 			Enable:             true,
 			NotifyOnFailover:   true,
@@ -326,7 +330,7 @@ func promptForConfig() (*Config, error) {
 	if err := writeYAMLConfig(cfg); err != nil {
 		return nil, err
 	}
-	
+
 	fmt.Println("設定已儲存至", ConfigFile)
 
 	return cfg, nil

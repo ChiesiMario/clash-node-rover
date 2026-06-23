@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,12 @@ var (
 	bgFailover = color.New(color.BgHiMagenta, color.FgHiWhite, color.Bold)
 )
 
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+func stripANSI(str string) string {
+	return ansiEscape.ReplaceAllString(str, "")
+}
+
 type WebLogEntry struct {
 	Level   string `json:"level"`
 	Message string `json:"message"`
@@ -43,7 +50,7 @@ var (
 func broadcastWebLog(level, msg string) {
 	entry := WebLogEntry{
 		Level:   level,
-		Message: msg,
+		Message: stripANSI(msg),
 		Time:    time.Now().Format("15:04:05"),
 	}
 
@@ -171,4 +178,3 @@ func logTreeItem(isLast bool, format string, a ...interface{}) {
 	log.Print(fmt.Sprintf("%s %s", getTimeStr(), colorMuted.Sprint(prefix)+msg))
 	broadcastWebLog("tree", prefix+msg)
 }
-

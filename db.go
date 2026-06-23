@@ -98,7 +98,7 @@ func (d *DB) SetMetadata(key string, value string) error {
 
 func (d *DB) CleanOldLogs(days int) error {
 	cutoff := time.Now().AddDate(0, 0, -days).Unix()
-	
+
 	query1 := `DELETE FROM ping_logs WHERE timestamp < ?`
 	_, err := d.sqlDB.Exec(query1, cutoff)
 	if err != nil {
@@ -155,14 +155,14 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 
 	// 每個節點的原始資料收集
 	type nodeRawData struct {
-		successWeightSum   float64
-		totalWeightSum     float64
-		delayWeightedSum   float64
-		delayWeightSum     float64
-		delays             []float64 // 成功的延遲值，用於計算標準差
-		delayWeights       []float64 // 對應的權重
-		totalCount         int
-		successCount       int
+		successWeightSum float64
+		totalWeightSum   float64
+		delayWeightedSum float64
+		delayWeightSum   float64
+		delays           []float64 // 成功的延遲值，用於計算標準差
+		delayWeights     []float64 // 對應的權重
+		totalCount       int
+		successCount     int
 	}
 
 	nodeData := make(map[string]*nodeRawData)
@@ -353,14 +353,14 @@ type PingLog struct {
 
 func (d *DB) GetNodeHistory(nodeName string, hours int) ([]PingLog, error) {
 	cutoff := time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
-	
+
 	query := `
 		SELECT timestamp, delay 
 		FROM ping_logs 
 		WHERE node_name = ? AND timestamp >= ? AND success = 1
 		ORDER BY timestamp ASC
 	`
-	
+
 	rows, err := d.sqlDB.Query(query, nodeName, cutoff)
 	if err != nil {
 		return nil, err
@@ -374,33 +374,33 @@ func (d *DB) GetNodeHistory(nodeName string, hours int) ([]PingLog, error) {
 			history = append(history, log)
 		}
 	}
-	
+
 	return history, nil
 }
 
 func (d *DB) Cleanup(days int) error {
 	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
-	
+
 	// Delete old ping logs
 	if _, err := d.sqlDB.Exec("DELETE FROM ping_logs WHERE timestamp < ?", cutoff); err != nil {
 		return err
 	}
-	
+
 	// Delete old bandwidth logs
 	if _, err := d.sqlDB.Exec("DELETE FROM bandwidth_logs WHERE timestamp < ?", cutoff); err != nil {
 		return err
 	}
-	
+
 	// Delete old browser logs
 	if _, err := d.sqlDB.Exec("DELETE FROM browser_logs WHERE timestamp < ?", cutoff); err != nil {
 		return err
 	}
-	
+
 	// Reclaim space
 	if _, err := d.sqlDB.Exec("VACUUM"); err != nil {
 		return err
 	}
-	
+
 	return nil
 }
 

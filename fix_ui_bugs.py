@@ -1,8 +1,33 @@
-import { Fragment, useState, useEffect, useRef } from 'react';
+import re
+
+# 1. Fix App.tsx Logo
+with open('frontend/src/App.tsx', 'r', encoding='utf-8') as f:
+    app = f.read()
+
+app = app.replace('<img id="app-logo-img" src="/logo.png" alt="Logo" width="28" height="28" />', 
+                  '<span className="material-symbols-outlined" style={{color: "var(--md-sys-color-primary)", fontSize: "28px"}}>rocket_launch</span>')
+with open('frontend/src/App.tsx', 'w', encoding='utf-8') as f:
+    f.write(app)
+
+
+# 2. Fix GroupCard.tsx Filtering Logic and <select> selected attribute
+with open('frontend/src/components/GroupCard.tsx', 'r', encoding='utf-8') as f:
+    gc = f.read()
+
+gc = gc.replace("let isR = rx.includes(r + '|');", "let isR = rx.includes(REGION_PRESETS[r]);")
+gc = gc.replace("selected={n === group.now}", "")
+gc = gc.replace('<select id={`select-${group.name}`}', '<select id={`select-${group.name}`} defaultValue={group.now}')
+
+with open('frontend/src/components/GroupCard.tsx', 'w', encoding='utf-8') as f:
+    f.write(gc)
+
+
+# 3. Add Chart implementation back to NodeRanking.tsx
+chart_code = """import { useState, useEffect, useRef } from 'react';
 import type { NodeStat } from '../hooks/useApi';
 import Chart from 'chart.js/auto';
 
-function ChartRow({ nodeName, avgDelay, jitter, score }: { nodeName: string, avgDelay: number, jitter: number, score: number }) {
+function ChartRow({ nodeName, safeId, avgDelay, jitter, score }: { nodeName: string, safeId: string, avgDelay: number, jitter: number, score: number }) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const chartRef = useRef<Chart | null>(null);
 
@@ -95,7 +120,7 @@ export default function NodeRanking({ stats }: { stats: NodeStat[] }) {
                                 <span className="score-box">{node.Score}</span>;
 
                             return (
-                                <Fragment key={node.Name}>
+                                <React.Fragment key={node.Name}>
                                     <tr className={`node-row ${expandedNode === node.Name ? 'expanded-row' : ''}`} style={{borderBottom:'1px solid var(--md-sys-color-outline-variant)', cursor: 'pointer'}} onClick={() => setExpandedNode(expandedNode === node.Name ? null : node.Name)}>
                                         <td style={{padding:'16px 8px'}}>#{index + 1}</td>
                                         <td style={{padding:'16px 8px', fontWeight:500, color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>
@@ -114,9 +139,9 @@ export default function NodeRanking({ stats }: { stats: NodeStat[] }) {
                                         </td>
                                     </tr>
                                     {expandedNode === node.Name && !node.is_dead && (
-                                        <ChartRow nodeName={node.Name} avgDelay={node.AvgDelay} jitter={node.Jitter} score={node.Score} />
+                                        <ChartRow nodeName={node.Name} safeId={btoa(encodeURIComponent(node.Name)).replace(/=/g, '')} avgDelay={node.AvgDelay} jitter={node.Jitter} score={node.Score} />
                                     )}
-                                </Fragment>
+                                </React.Fragment>
                             );
                         })}
                     </tbody>
@@ -125,3 +150,6 @@ export default function NodeRanking({ stats }: { stats: NodeStat[] }) {
         </div>
     );
 }
+"""
+with open('frontend/src/components/NodeRanking.tsx', 'w', encoding='utf-8') as f:
+    f.write(chart_code)

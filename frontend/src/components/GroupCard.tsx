@@ -17,7 +17,7 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
     const handleRegionChange = (val: string, checked: boolean) => {
         let regexes: string[] = [];
         ['US', 'HK', 'TW', 'JP', 'SG', 'UK'].forEach(r => {
-            let isR = rx.includes(r + '|');
+            let isR = rx.includes(REGION_PRESETS[r]);
             if (r === val) isR = checked;
             if (isR) regexes.push(REGION_PRESETS[r]);
         });
@@ -50,8 +50,8 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
             {group.provider && <div className="badge primary" style={{alignSelf: 'flex-start'}}><span className="material-symbols-outlined" style={{fontSize:'14px'}}>corporate_fare</span> {group.provider}</div>}
             <div style={{color: 'var(--md-sys-color-on-surface-variant)', fontSize:'14px', marginTop:'8px', marginBottom:'8px'}}>運行中 &bull; 共 {group.all_count} 個節點</div>
             <div style={{display: 'flex', gap: '8px'}}>
-                <select id={`select-${group.name}`} style={{flex:1, background: 'var(--md-sys-color-surface-container-high)', color: 'var(--md-sys-color-on-surface)', border: '1px solid var(--md-sys-color-outline)', borderRadius: '8px', padding: '8px'}}>
-                    {group.all_nodes.map((n: string) => <option key={n} value={n} selected={n === group.now}>{n}</option>)}
+                <select id={`select-${group.name}`} defaultValue={group.now} style={{flex:1, background: 'var(--md-sys-color-surface-container-high)', color: 'var(--md-sys-color-on-surface)', border: '1px solid var(--md-sys-color-outline)', borderRadius: '8px', padding: '8px'}}>
+                    {group.all_nodes.map((n: string) => <option key={n} value={n} >{n}</option>)}
                 </select>
                 <button onClick={() => {
                     const sel = document.getElementById(`select-${group.name}`) as HTMLSelectElement;

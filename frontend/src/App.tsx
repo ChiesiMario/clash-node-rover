@@ -38,7 +38,7 @@ function App() {
         <div className="container">
             <div className="top-app-bar" style={{marginBottom: '24px', borderRadius: '16px'}}>
                 <div className="app-title">
-                    <img id="app-logo-img" src="/logo.png" alt="Logo" width="28" height="28" />
+                    <span className="material-symbols-outlined" style={{color: "var(--md-sys-color-primary)", fontSize: "28px"}}>rocket_launch</span>
                     Clash Node Rover
                 </div>
                 <button className="icon-btn" onClick={toggleTheme} title="切換深色/淺色主題">

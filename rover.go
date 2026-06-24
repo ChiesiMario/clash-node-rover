@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chromedp/chromedp"
@@ -32,7 +33,7 @@ type Rover struct {
 	// 進階功能控制
 	ManualTrigger chan struct{}
 	Quit          chan struct{}
-	IsRunning     bool
+	IsRunning     atomic.Bool
 	IsPaused      bool
 	pauseMutex    sync.RWMutex
 }
@@ -49,7 +50,6 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		lastInterviewTime: make(map[string]time.Time),
 		ManualTrigger:     make(chan struct{}, 1),
 		Quit:              make(chan struct{}, 1),
-		IsRunning:         false,
 		IsPaused:          false,
 	}
 	r.loadState()
@@ -162,11 +162,6 @@ func (r *Rover) checkBrowserTestURLsChanged() {
 }
 
 func (r *Rover) checkClashStatus() bool {
-	_, err := r.api.GetProxyProviders()
-	if err != nil {
-		logWarning("Clash API 連線失敗或不在線: %v", err)
-		return false
-	}
 
 	for _, groupName := range r.GetConfig().TargetGroups {
 		_, err := r.api.GetProxyGroup(groupName)
@@ -322,13 +317,12 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		return
 	}
 
-	if r.IsRunning {
+	if !r.IsRunning.CompareAndSwap(false, true) {
 		return
 	}
-	r.IsRunning = true
 	defer func() {
 		r.saveState()
-		r.IsRunning = false
+		r.IsRunning.Store(false)
 		logReportEnd()
 		BroadcastRefresh()
 	}()
@@ -962,14 +956,17 @@ func (r *Rover) runFailoverWatchdog(ctx context.Context) {
 
 	for {
 		select {
-		case <-r.Quit:
-			return
 		case <-ctx.Done():
 			logInfo("停止秒級急救機制 Watchdog (Context Cancelled)")
 			return
 		case <-ticker.C:
-			if r.IsRunning {
+			if r.IsRunning.Load() {
 				// 如果主測速引擎正在執行中，不要干擾
+				continue
+			}
+			
+			if r.GetIsPaused() {
+				// 系統暫停時，不執行急救機制
 				continue
 			}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -46,7 +47,9 @@ type ProxiesResponse struct {
 
 func (c *APIClient) GetProxyGroup(name string) (*ProxyGroup, error) {
 	encodedName := url.PathEscape(name)
-	req, err := http.NewRequest("GET", c.BaseURL+"/proxies/"+encodedName, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/proxies/"+encodedName, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +81,9 @@ func (c *APIClient) TestProxyDelay(proxyName, testUrl string, timeout time.Durat
 	encodedName := url.PathEscape(proxyName)
 	u := fmt.Sprintf("%s/proxies/%s/delay?timeout=%d&url=%s", c.BaseURL, encodedName, timeout.Milliseconds(), url.QueryEscape(testUrl))
 
-	req, err := http.NewRequest("GET", u, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -114,7 +119,9 @@ func (c *APIClient) SelectProxy(groupName, proxyName string) error {
 		return err
 	}
 
-	req, err := http.NewRequest("PUT", u, bytes.NewReader(payloadBytes))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "PUT", u, bytes.NewReader(payloadBytes))
 	if err != nil {
 		return err
 	}
@@ -147,7 +154,9 @@ func (api *APIClient) TestBandwidth(testURL string, proxyURL string, timeout tim
 		Timeout:   timeout,
 	}
 
-	req, err := http.NewRequest("GET", testURL, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", testURL, nil)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -202,7 +211,9 @@ type ProvidersResponse struct {
 }
 
 func (c *APIClient) GetProxyProviders() (map[string]ProxyProvider, error) {
-	req, err := http.NewRequest("GET", c.BaseURL+"/providers/proxies", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/providers/proxies", nil)
 	if err != nil {
 		return nil, err
 	}

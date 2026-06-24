@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 
 	"github.com/getlantern/systray"
 )
@@ -18,14 +19,64 @@ var iconData []byte
 var (
 	globalRover *Rover
 	globalDB    *DB
-	logFile     *os.File
+	logFile     io.WriteCloser
 )
 
-func main() {
-	// Initialize logger
-	f, err := os.OpenFile("rover.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+type LogRotator struct {
+	filename string
+	maxSize  int64
+	file     *os.File
+	size     int64
+	mu       sync.Mutex
+}
+
+func NewLogRotator(filename string, maxSize int64) (*LogRotator, error) {
+	f, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	size := int64(0)
 	if err == nil {
-		logFile = f
+		size = info.Size()
+	}
+	return &LogRotator{filename: filename, maxSize: maxSize, file: f, size: size}, nil
+}
+
+func (l *LogRotator) Write(p []byte) (n int, err error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.size+int64(len(p)) > l.maxSize {
+		l.file.Close()
+		os.Rename(l.filename, l.filename+".old")
+		f, err := os.OpenFile(l.filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return 0, err
+		}
+		l.file = f
+		l.size = 0
+	}
+
+	n, err = l.file.Write(p)
+	l.size += int64(n)
+	return n, err
+}
+
+func (l *LogRotator) Close() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.file != nil {
+		return l.file.Close()
+	}
+	return nil
+}
+
+func main() {
+	// Initialize logger (Max 10MB per file)
+	rotator, err := NewLogRotator("rover.log", 10*1024*1024)
+	if err == nil {
+		logFile = rotator
 		mw := io.MultiWriter(os.Stdout, logFile)
 		log.SetOutput(mw)
 	}

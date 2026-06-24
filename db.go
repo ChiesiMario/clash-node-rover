@@ -56,6 +56,8 @@ func InitDB() (*DB, error) {
 	// 開啟 WAL 模式與調整同步層級以優化高併發寫入
 	db.Exec("PRAGMA journal_mode=WAL;")
 	db.Exec("PRAGMA synchronous=NORMAL;")
+	db.Exec("PRAGMA busy_timeout=5000;")
+	db.SetMaxOpenConns(1) // 強制 Go 單線程操作資料庫，從根源消滅 SQLITE_BUSY
 
 	// 自動升級資料庫結構 (如果舊版沒有 downloaded_bytes 欄位)
 	db.Exec("ALTER TABLE bandwidth_logs ADD COLUMN downloaded_bytes INTEGER DEFAULT 0;")
@@ -152,13 +154,19 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 	// ========================================
 	// 第一層：撈取所有 ping_logs 原始行，在 Go 端計算
 	// ========================================
+	// Ping 日誌的半衰期僅有 2 小時，超過 24 小時的權重極低，因此最多只撈取過去 24 小時的資料以節省 CPU 與記憶體
+	pingCutoff := cutoff
+	if float64(nowUnix)-float64(pingCutoff) > 24*3600 {
+		pingCutoff = int64(nowUnix) - 24*3600
+	}
+
 	pingQuery := `
 		SELECT node_name, timestamp, delay, success
 		FROM ping_logs
 		WHERE timestamp >= ?
 		ORDER BY node_name
 	`
-	pingRows, err := d.sqlDB.Query(pingQuery, cutoff)
+	pingRows, err := d.sqlDB.Query(pingQuery, pingCutoff)
 	if err != nil {
 		return nil, err
 	}

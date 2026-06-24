@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -20,32 +21,46 @@ var (
 	}
 	wsClients      = make(map[*websocket.Conn]bool)
 	wsClientsMutex sync.Mutex
+	broadcastChan  = make(chan interface{}, 1000)
 )
 
-func BroadcastRefresh() {
-	wsClientsMutex.Lock()
-	defer wsClientsMutex.Unlock()
-	for client := range wsClients {
-		err := client.WriteJSON(map[string]string{"type": "refresh"})
-		if err != nil {
-			client.Close()
-			delete(wsClients, client)
+func init() {
+	go func() {
+		for msg := range broadcastChan {
+			wsClientsMutex.Lock()
+			clients := make([]*websocket.Conn, 0, len(wsClients))
+			for client := range wsClients {
+				clients = append(clients, client)
+			}
+			wsClientsMutex.Unlock()
+
+			for _, client := range clients {
+				client.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
+				if err := client.WriteJSON(msg); err != nil {
+					client.Close()
+					wsClientsMutex.Lock()
+					delete(wsClients, client)
+					wsClientsMutex.Unlock()
+				}
+			}
 		}
+	}()
+}
+
+func BroadcastRefresh() {
+	select {
+	case broadcastChan <- map[string]string{"type": "refresh"}:
+	default:
 	}
 }
 
 func BroadcastSingleLog(entry WebLogEntry) {
-	wsClientsMutex.Lock()
-	defer wsClientsMutex.Unlock()
-	msg := map[string]interface{}{
+	select {
+	case broadcastChan <- map[string]interface{}{
 		"type":  "log",
 		"entry": entry,
-	}
-	for client := range wsClients {
-		if err := client.WriteJSON(msg); err != nil {
-			client.Close()
-			delete(wsClients, client)
-		}
+	}:
+	default:
 	}
 }
 
@@ -158,7 +173,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]bool{
-			"is_running": rover.IsRunning,
+			"is_running": rover.IsRunning.Load(),
 			"is_paused":  rover.GetIsPaused(),
 		})
 	})

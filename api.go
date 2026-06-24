@@ -140,6 +140,8 @@ func (c *APIClient) SelectProxy(groupName, proxyName string) error {
 	return nil
 }
 
+
+
 func (api *APIClient) TestBandwidth(testURL string, proxyURL string, timeout time.Duration) (float64, int64, error) {
 	parsedProxy, err := url.Parse(proxyURL)
 	if err != nil {

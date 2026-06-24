@@ -109,6 +109,12 @@ func logFailover(format string, a ...interface{}) {
 	broadcastWebLog("error", "🚑 [急救機制] "+msg)
 }
 
+func GetLogHistoryCount() int {
+	logHistoryMutex.Lock()
+	defer logHistoryMutex.Unlock()
+	return len(logHistory)
+}
+
 func logMuted(format string, a ...interface{}) {
 	msg := fmt.Sprintf(format, a...)
 	log.Print(fmt.Sprintf("%s          %s", getTimeStr(), colorMuted.Sprint(msg)))

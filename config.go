@@ -14,7 +14,7 @@ import (
 
 type NotificationConfig struct {
 	Enable             bool `yaml:"enable"`
-	NotifyOnFailover   bool `yaml:"notify_on_failover"`
+	
 	NotifyOnBetterNode bool `yaml:"notify_on_better_node"`
 }
 
@@ -26,21 +26,15 @@ type Config struct {
 	DedicatedTestGroup    string        `yaml:"dedicated_test_group"`
 	TestURLs              []string      `yaml:"test_urls"`
 	TestTimeout           time.Duration `yaml:"test_timeout"`
-	BrowserToleranceMs    int           `yaml:"browser_tolerance_ms"` // milliseconds
-	HistoryDays           int           `yaml:"history_days"`         // days
+	ToleranceMs           int           `yaml:"tolerance_ms"`         // milliseconds
 	CleanupDays           int           `yaml:"cleanup_days"`         // days
 	MaxConcurrent         int           `yaml:"max_concurrent"`
 	WebPort               int           `yaml:"web_port"`
 	ClashProxyURL         string        `yaml:"clash_proxy_url"`
-	BandwidthTestURL      string        `yaml:"bandwidth_test_url"`
-	BandwidthTestInterval int           `yaml:"bandwidth_test_interval"`      // minutes
-	ExplorationCooldown   int           `yaml:"exploration_cooldown_minutes"` // minutes
 	MaxBackoffCycles      int           `yaml:"max_backoff_cycles"`
 
-	EnableFailover   bool `yaml:"enable_failover"`
-	FailoverInterval int  `yaml:"failover_interval"` // seconds
-	FailoverMaxFails int  `yaml:"failover_max_fails"`
-
+	
+		
 	EnableBrowserTest bool     `yaml:"enable_browser_test"`
 	BrowserTestURLs   []string `yaml:"browser_test_urls"`
 
@@ -79,11 +73,8 @@ test_urls:
 # Ping 測試的超時時間
 test_timeout: 5s
 
-# 網頁載入速度容忍度 (毫秒)。只有當新節點的網頁開啟速度比目前節點快超過此數值時，才會進行切換
-browser_tolerance_ms: 500
-
-# 歷史紀錄保留天數 (用於計算品質分數與網頁折線圖)
-history_days: 7
+# 節點切換容忍度 (毫秒)。當新節點的綜合分數(Ping+Jitter)比目前節點快超過此數值時，才會進行切換，避免頻繁切換
+tolerance_ms: 10
 
 # 資料庫自動瘦身機制 (超過此天數的陳舊日誌將被自動刪除並壓縮資料庫體積)
 cleanup_days: 7
@@ -94,32 +85,13 @@ max_concurrent: 10
 # Web 儀表板的監聽埠
 web_port: 9091
 
-# Clash 的 HTTP 代理網址 (用於真實下載測速)
+# Clash 的 HTTP 代理網址 (用於無頭瀏覽器測試)
 clash_proxy_url: "http://127.0.0.1:7890"
-
-# 真實頻寬測速用的下載檔案網址 (建議使用支援 HTTPS 的高頻寬測速專用檔案)
-bandwidth_test_url: "https://speed.cloudflare.com/__down?bytes=15728640"
-
-# 同一個節點的真實頻寬測速冷卻時間 (分鐘)。這段時間內不會重複消耗流量測速
-bandwidth_test_interval: 60
-
-# 潛力節點面試 (探索) 的獨立冷卻時間 (分鐘)。
-# 面試過的節點在這段時間內不會再次被面試，將機會讓給其他潛力節點
-exploration_cooldown_minutes: 60
 
 # 發生連線錯誤時的退避冷卻循環次數。失敗越多次，冷卻越久，最高不超過此數值
 max_backoff_cycles: 5
 
-# 是否啟用秒級急救機制 (當前使用節點斷線時，秒級切換至備用節點)
-enable_failover: true
-
-# 秒級急救機制的偵測間隔 (秒)
-failover_interval: 3
-
-# 秒級急救機制的連續失敗次數門檻 (達到此數字才觸發急救，防止網路瞬斷誤判)
-failover_max_fails: 2
-
-# 是否啟用無頭瀏覽器網頁測試 (在下載測速後實際開啟網頁測試連通性)
+# 是否啟用無頭瀏覽器網頁測試 (實際開啟網頁測試連通性)
 enable_browser_test: true
 
 # 無頭瀏覽器測試的目標網址清單 (預設為 Google 與 YouTube)
@@ -130,7 +102,6 @@ browser_test_urls:
 # 原生桌面通知設定
 notifications:
   enable: true
-  notify_on_failover: true
   notify_on_better_node: false
 `
 
@@ -212,11 +183,8 @@ func loadConfig() (*Config, error) {
 	if cfg.TestTimeout <= 0 {
 		cfg.TestTimeout = 5 * time.Second
 	}
-	if cfg.BrowserToleranceMs <= 0 {
-		cfg.BrowserToleranceMs = 500
-	}
-	if cfg.HistoryDays <= 0 {
-		cfg.HistoryDays = 7
+	if cfg.ToleranceMs <= 0 {
+		cfg.ToleranceMs = 10
 	}
 	if cfg.CleanupDays <= 0 {
 		cfg.CleanupDays = 7
@@ -234,34 +202,10 @@ func loadConfig() (*Config, error) {
 	if cfg.ClashProxyURL == "" {
 		cfg.ClashProxyURL = "http://127.0.0.1:7890"
 	}
-	if cfg.BandwidthTestURL == "" {
-		cfg.BandwidthTestURL = "https://speed.cloudflare.com/__down?bytes=15728640"
-	}
-	if cfg.BandwidthTestInterval <= 0 {
-		cfg.BandwidthTestInterval = 60
-	}
-	if cfg.ExplorationCooldown <= 0 {
-		cfg.ExplorationCooldown = 60
-	}
 	if cfg.MaxBackoffCycles <= 0 {
 		cfg.MaxBackoffCycles = 5
 	}
-	// Failover defaults (for upgrades)
-	if cfg.FailoverInterval <= 0 {
-		cfg.FailoverInterval = 3
-	}
-	if cfg.FailoverMaxFails <= 0 {
-		cfg.FailoverMaxFails = 2
-	}
-	// EnableFailover is a boolean, so false is default. For old users upgrading,
-	// we might want it true, but they will have to manually add it or use defaults.
-	// We'll assume if FailoverInterval was not set, they are upgrading, but we can't easily distinguish.
-	// Actually we'll default EnableFailover to true if FailoverInterval was 0 (meaning missing).
-	if cfg.FailoverInterval == 3 && cfg.FailoverMaxFails == 2 {
-		// Just to be safe, if we set the defaults above, maybe we should also default EnableFailover to true.
-		// However, missing bool in YAML parses as false.
-		// We'll leave it as is, or we can check a string pointer if we wanted. Let's not overwrite if they explicitly put false.
-	}
+	// Failover defaults removed
 
 	// Browser test defaults
 	if len(cfg.BrowserTestURLs) == 0 {
@@ -307,23 +251,16 @@ func promptForConfig() (*Config, error) {
 		TargetGroups:        []string{"🤖 Node Rover"},
 		TestURLs:            []string{"http://www.gstatic.com/generate_204", "http://cp.cloudflare.com/generate_204", "http://www.apple.com/library/test/success.html"},
 		TestTimeout:         5 * time.Second,
-		BrowserToleranceMs:  500,
-		HistoryDays:         7,
+		ToleranceMs:         10,
 		CleanupDays:         7,
 		MaxConcurrent:       10,
 		WebPort:             9091,
 		ClashProxyURL:       "http://127.0.0.1:7890",
-		BandwidthTestURL:    "https://speed.cloudflare.com/__down?bytes=15728640",
-		ExplorationCooldown: 60,
 		MaxBackoffCycles:    5,
-		EnableFailover:      true,
-		FailoverInterval:    3,
-		FailoverMaxFails:    2,
 		EnableBrowserTest:   true,
 		BrowserTestURLs:     []string{"https://www.google.com", "https://www.youtube.com"},
 		Notifications: NotificationConfig{
 			Enable:             true,
-			NotifyOnFailover:   true,
 			NotifyOnBetterNode: false,
 		},
 	}

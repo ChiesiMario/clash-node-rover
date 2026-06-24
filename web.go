@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"runtime"
 	"sync"
 	"time"
 
@@ -69,12 +71,13 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 
 	http.HandleFunc("/api/groups", func(w http.ResponseWriter, r *http.Request) {
 		type GroupStatus struct {
-			Name     string   `json:"name"`
-			Now      string   `json:"now"`
-			Provider string   `json:"provider"`
-			All      int      `json:"all_count"`
-			AllNodes []string `json:"all_nodes"`
-			Locked   bool     `json:"locked"`
+			Name     string      `json:"name"`
+			Now      string      `json:"now"`
+			Provider string      `json:"provider"`
+			All      int         `json:"all_count"`
+			AllNodes []string    `json:"all_nodes"`
+			Locked   bool        `json:"locked"`
+			Filter   GroupFilter `json:"filter"`
 		}
 		var statuses []GroupStatus
 		for _, gName := range rover.GetConfig().TargetGroups {
@@ -87,11 +90,52 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 					All:      len(g.All),
 					AllNodes: g.All,
 					Locked:   rover.IsGroupLocked(gName),
+					Filter:   rover.getGroupFilter(gName),
 				})
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(statuses)
+	})
+
+	
+	http.HandleFunc("/api/groups/filter", func(w http.ResponseWriter, req *http.Request) {
+		groupName := req.URL.Query().Get("group")
+		if groupName == "" {
+			http.Error(w, "Missing group", http.StatusBadRequest)
+			return
+		}
+
+		if req.Method == "GET" {
+			val, _ := db.GetMetadata("group_filter_" + groupName)
+			if val == "" {
+				val = `{"keyword_regex": "", "check_chatgpt": false, "check_gemini": false, "check_antigravity": false}`
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(val))
+			return
+		}
+
+		if req.Method == "POST" {
+			var filter struct {
+				KeywordRegex string `json:"keyword_regex"`
+				CheckChatGPT     bool   `json:"check_chatgpt"`
+				CheckGemini      bool   `json:"check_gemini"`
+				CheckAntigravity bool   `json:"check_antigravity"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&filter); err != nil {
+				http.Error(w, "Invalid request", http.StatusBadRequest)
+				return
+			}
+			
+			b, _ := json.Marshal(filter)
+			db.SetMetadata("group_filter_"+groupName, string(b))
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			return
+		}
+		
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	})
 
 	http.HandleFunc("/api/groups/lock", func(w http.ResponseWriter, r *http.Request) {
@@ -114,60 +158,50 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+
+
 	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
-		scores, err := db.GetScores(rover.GetConfig().HistoryDays)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
+		statMap := rover.GetStatResults()
 
 		highestInGroups := make(map[string][]string)
 		for _, groupName := range rover.GetConfig().TargetGroups {
 			g, err := rover.GetAPI().GetProxyGroup(groupName)
 			if err == nil {
-				highestScore := -999999
-				highestNode := ""
-				for _, name := range g.All {
-					if sc, ok := scores[name]; ok && sc.Score > highestScore {
-						highestScore = sc.Score
-						highestNode = name
-					}
-				}
-				if highestNode != "" {
-					highestInGroups[highestNode] = append(highestInGroups[highestNode], groupName)
+				if g.Now != "" {
+					highestInGroups[g.Now] = append(highestInGroups[g.Now], groupName)
 				}
 			}
 		}
 
 		type StatNode struct {
-			NodeScore
+			Name              string   `json:"Name"`
+			AvgDelay          int      `json:"AvgDelay"`
+			Jitter            int      `json:"Jitter"`
+			Score             int      `json:"Score"`
 			Provider          string   `json:"provider"`
 			HighestInGroups   []string `json:"highest_in_groups"`
-			LastInterviewTime int64    `json:"last_interview_time"`
-			CooldownMinutes   int      `json:"cooldown_minutes"`
 			BackoffRemaining  int      `json:"backoff_remaining"`
 		}
+		
 		list := make([]StatNode, 0)
-		for _, sc := range scores {
-			t := rover.GetLastInterviewTime(sc.Name)
-			var lastInt int64
-			if !t.IsZero() {
-				lastInt = t.Unix()
+		for _, sc := range statMap {
+			if sc.Err != nil {
+				continue
 			}
 			list = append(list, StatNode{
-				NodeScore:         sc,
+				Name:              sc.Name,
+				AvgDelay:          sc.AvgDelay,
+				Jitter:            sc.Jitter,
+				Score:             sc.Score,
 				Provider:          GetNodeProvider(sc.Name),
 				HighestInGroups:   highestInGroups[sc.Name],
-				LastInterviewTime: lastInt,
-				CooldownMinutes:   rover.GetConfig().ExplorationCooldown,
 				BackoffRemaining:  rover.GetBackoffRemaining(sc.Name),
 			})
 		}
 
-		// Sort by score descending
 		for i := 0; i < len(list); i++ {
 			for j := i + 1; j < len(list); j++ {
-				if list[i].Score < list[j].Score {
+				if list[i].Score > list[j].Score {
 					list[i], list[j] = list[j], list[i]
 				}
 			}
@@ -193,10 +227,22 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 	})
 
 	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		
+		dbSizeMB := 0.0
+		if stat, err := os.Stat("rover.db"); err == nil {
+			dbSizeMB = float64(stat.Size()) / 1024 / 1024
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]bool{
-			"is_running": rover.IsRunning.Load(),
-			"is_paused":  rover.GetIsPaused(),
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"is_running":   rover.IsRunning.Load(),
+			"is_paused":    rover.GetIsPaused(),
+			"mem_alloc_mb": float64(m.Alloc) / 1024 / 1024,
+			"mem_sys_mb":   float64(m.Sys) / 1024 / 1024,
+			"db_size_mb":   dbSizeMB,
+			"log_count":    GetLogHistoryCount(),
 		})
 	})
 

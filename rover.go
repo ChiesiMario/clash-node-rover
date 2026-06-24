@@ -1,11 +1,14 @@
 package main
 
 import (
+	"regexp"
+
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -27,21 +30,30 @@ type Rover struct {
 	backoffRemaining  map[string]int
 	lastCheckTime     map[string]time.Time
 	lastBandwidthTest map[string]time.Time
-	lastInterviewTime map[string]time.Time
-	stateMutex        sync.RWMutex
+	lastInterviewTime    map[string]time.Time
+	lastNetworkCheckTime time.Time
+	isNetworkUp          bool
+	stateMutex           sync.RWMutex
 
 	// 進階功能控制
 	ManualTrigger chan struct{}
-	Quit          chan struct{}
-	IsRunning     atomic.Bool
-	IsPaused      bool
-	pauseMutex    sync.RWMutex
+	Quit            chan struct{}
+	IsRunning       atomic.Bool
+	activeBorrowing atomic.Bool
+	IsPaused        bool
+	pauseMutex      sync.RWMutex
 	lockedGroups  map[string]bool
 	lockedMutex   sync.RWMutex
+
+	statResultsMap map[string]nodeStat
+	statsMutex     sync.RWMutex
+
+	startTime         time.Time
 }
 
 func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 	r := &Rover{
+		startTime:         time.Now(),
 		cfg:               cfg,
 		api:               api,
 		db:                db,
@@ -54,6 +66,8 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		Quit:              make(chan struct{}, 1),
 		IsPaused:          false,
 		lockedGroups:      make(map[string]bool),
+		isNetworkUp:       true, // 預設當作有網路
+		statResultsMap:    make(map[string]nodeStat),
 	}
 	r.loadState()
 	return r
@@ -94,6 +108,45 @@ func (r *Rover) SetGroupLocked(groupName string, locked bool) {
 	} else {
 		logSuccess("🔓 群組 [%s] 已解鎖，恢復自動切換", groupName)
 	}
+}
+
+func (r *Rover) checkGlobalNetwork() bool {
+	r.stateMutex.RLock()
+	lastCheck := r.lastNetworkCheckTime
+	isUp := r.isNetworkUp
+	r.stateMutex.RUnlock()
+
+	if time.Since(lastCheck) < 5*time.Second {
+		return isUp
+	}
+
+	endpoints := []string{"1.1.1.1:53", "8.8.8.8:53", "223.5.5.5:53", "114.114.114.114:53"}
+	success := false
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	for _, ep := range endpoints {
+		wg.Add(1)
+		go func(address string) {
+			defer wg.Done()
+			conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+			if err == nil {
+				conn.Close()
+				mu.Lock()
+				success = true
+				mu.Unlock()
+			}
+		}(ep)
+	}
+
+	wg.Wait()
+
+	r.stateMutex.Lock()
+	r.lastNetworkCheckTime = time.Now()
+	r.isNetworkUp = success
+	r.stateMutex.Unlock()
+
+	return success
 }
 
 func (r *Rover) loadState() {
@@ -254,9 +307,6 @@ func (r *Rover) Start() {
 
 		// 內層迴圈: 正常任務執行 (Active Loop)
 		watchdogCtx, watchdogCancel := context.WithCancel(context.Background())
-		if r.GetConfig().EnableFailover {
-			go r.runFailoverWatchdog(watchdogCtx)
-		}
 
 		apiBroken := make(chan struct{}, 1)
 
@@ -339,9 +389,21 @@ func (r *Rover) ForceCheck() {
 }
 
 type nodeStat struct {
-	Name  string
-	Delay int
-	Err   error
+	Name     string
+	AvgDelay int
+	Jitter   int
+	Score    int
+	Err      error
+}
+
+func (r *Rover) GetStatResults() map[string]nodeStat {
+	r.statsMutex.RLock()
+	defer r.statsMutex.RUnlock()
+	res := make(map[string]nodeStat)
+	for k, v := range r.statResultsMap {
+		res[k] = v
+	}
+	return res
 }
 
 func (r *Rover) runCheckCycle(isManual bool) {
@@ -358,6 +420,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	defer func() {
 		r.saveState()
 		r.IsRunning.Store(false)
+		r.activeBorrowing.Store(false)
 		logReportEnd()
 		BroadcastRefresh()
 	}()
@@ -366,7 +429,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	groupNowMap := make(map[string]string)
 	uniqueNodes := make(map[string]bool)
 
-	// 更新全域 Provider 映射
 	providers, err := r.api.GetProxyProviders()
 	if err == nil {
 		for pName, p := range providers {
@@ -387,7 +449,26 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		if len(group.All) == 0 {
 			continue
 		}
-		groupNodesMap[groupName] = group.All
+		
+		filter := r.getGroupFilter(groupName)
+		var filteredNodes []string
+		var rx *regexp.Regexp
+		if filter.KeywordRegex != "" {
+			rx, _ = regexp.Compile("(?i)" + filter.KeywordRegex)
+		}
+		for _, n := range group.All {
+			if rx != nil && !rx.MatchString(n) {
+				continue
+			}
+			filteredNodes = append(filteredNodes, n)
+		}
+		
+		if len(filteredNodes) == 0 && len(group.All) > 0 {
+			logWarning("群組 [%s] 的節點被過濾規則全部排除了，退回使用全部節點。", groupName)
+			filteredNodes = group.All
+		}
+
+		groupNodesMap[groupName] = filteredNodes
 		groupNowMap[groupName] = group.Now
 		for _, name := range group.All {
 			uniqueNodes[name] = true
@@ -402,7 +483,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	var backedOffNodes []string
 	totalBackoff := 0
 
-	// 純次數退避檢查
 	r.stateMutex.Lock()
 	for name := range uniqueNodes {
 		if r.backoffRemaining[name] > 0 {
@@ -414,6 +494,25 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	}
 	r.stateMutex.Unlock()
 
+	if len(nodesToTest) == 0 || float64(totalBackoff) >= float64(len(uniqueNodes))*0.8 {
+		if len(uniqueNodes) > 0 {
+			logWarning("偵測到大規模節點癱瘓 (退避比例過高)，強制解除所有節點退避狀態以尋找可用節點！")
+			r.stateMutex.Lock()
+			for name := range uniqueNodes {
+				r.backoffRemaining[name] = 0
+				r.failedConsec[name] = 0
+			}
+			r.stateMutex.Unlock()
+
+			nodesToTest = nil
+			backedOffNodes = nil
+			totalBackoff = 0
+			for name := range uniqueNodes {
+				nodesToTest = append(nodesToTest, name)
+			}
+		}
+	}
+
 	defer func() {
 		r.stateMutex.Lock()
 		for _, name := range backedOffNodes {
@@ -423,8 +522,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 		r.stateMutex.Unlock()
 	}()
-
-	statResultsMap := make(map[string]nodeStat)
 
 	if len(nodesToTest) > 0 {
 		stats := make(chan nodeStat, len(nodesToTest))
@@ -436,21 +533,59 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			workerCount = len(nodesToTest)
 		}
 
-		var urlSample string
-		if len(r.GetConfig().TestURLs) > 0 {
-			urlSample = r.GetConfig().TestURLs[0]
-		}
-		logInfo("開始並發 Ping 測試 %s 個節點 (目標: %s..., 超時: %v)...", formatVal(len(nodesToTest)), urlSample, r.GetConfig().TestTimeout)
+		logInfo("開始並發 Ping 測試 %s 個節點 (每個測試 5 次)...", formatVal(len(nodesToTest)))
 
-		// 啟動 Worker Pool
 		for w := 0; w < workerCount; w++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				for name := range jobs {
-					testUrl := r.pickRandomURL()
-					delay, err := r.api.TestProxyDelay(name, testUrl, r.GetConfig().TestTimeout)
-					stats <- nodeStat{Name: name, Delay: delay, Err: err}
+					var delays []int
+					var lastErr error
+					for i := 0; i < 5; i++ {
+						testUrl := r.pickRandomURL()
+						delay, err := r.api.TestProxyDelay(name, testUrl, r.GetConfig().TestTimeout)
+						if err == nil && delay > 0 {
+							delays = append(delays, delay)
+						} else {
+							lastErr = err
+							break // Short-circuit: if one ping fails, stop testing this node
+						}
+					}
+					
+					var avgDelay, jitter float64
+					if len(delays) > 0 {
+						sum := 0
+						for _, d := range delays {
+							sum += d
+						}
+						avgDelay = float64(sum) / float64(len(delays))
+						
+						if len(delays) > 1 {
+							var varSum float64
+							for _, d := range delays {
+								diff := float64(d) - avgDelay
+								varSum += diff * diff
+							}
+							jitter = math.Sqrt(varSum / float64(len(delays)))
+						}
+					}
+					
+					if len(delays) < 5 {
+						if lastErr == nil {
+							lastErr = fmt.Errorf("incomplete pings (%d/5 successful)", len(delays))
+						}
+						logWarning("節點測速 [%s] 失敗: %v", name, lastErr)
+						stats <- nodeStat{Name: name, Err: lastErr}
+					} else {
+						logInfo("節點測速 [%s] 成功: 延遲 %dms, 抖動 %dms", name, int(avgDelay), int(jitter))
+						stats <- nodeStat{
+							Name:     name,
+							AvgDelay: int(avgDelay),
+							Jitter:   int(jitter),
+							Score:    int(avgDelay) + int(jitter),
+						}
+					}
 				}
 			}()
 		}
@@ -476,20 +611,26 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			return
 		}
 
+		if !r.checkGlobalNetwork() {
+			logError("🚨 實體網路斷線！為避免無差別誤殺節點，本次測速結果與懲罰全數作廢！")
+			return
+		}
+
 		successCount := 0
 		failCount := 0
 		var successfulStats []nodeStat
+		
+		r.statsMutex.Lock()
 		for _, s := range collectedStats {
-			statResultsMap[s.Name] = s
-			success := (s.Err == nil && s.Delay > 0)
+			r.statResultsMap[s.Name] = s
+			success := (s.Err == nil)
 			
 			r.stateMutex.Lock()
 			if success {
 				r.failedConsec[s.Name] = 0
-				r.backoffRemaining[s.Name] = 0 // 成功時重置退避
+				r.backoffRemaining[s.Name] = 0
 			} else {
 				r.failedConsec[s.Name]++
-				// 計算下一次的退避循環次數
 				fails := r.failedConsec[s.Name]
 				skipCycles := int(math.Pow(2, float64(fails-1)))
 				if skipCycles > r.GetConfig().MaxBackoffCycles {
@@ -502,309 +643,222 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			if success {
 				successCount++
 				successfulStats = append(successfulStats, s)
+				r.db.InsertLog(s.Name, s.AvgDelay, true)
 			} else {
 				failCount++
 				if s.Err != nil {
 					logMuted("  - ❌ [失敗] %s: %v", formatNode(s.Name), s.Err)
-				} else {
-					logMuted("  - ❌ [失敗] %s: 延遲為 0 或未知錯誤", formatNode(s.Name))
 				}
+				r.db.InsertLog(s.Name, 9999, false)
 			}
-			r.db.InsertLog(s.Name, s.Delay, success)
 		}
-		logSuccess("Ping 測試完成！有效節點: %s, 失敗/超時: %s", formatVal(successCount), formatVal(failCount))
+		r.statsMutex.Unlock()
+		logSuccess(" ICMP 測速環節完成！有效節點: %s, 失敗/超時: %s", formatVal(successCount), formatVal(failCount))
 
 		sort.Slice(successfulStats, func(i, j int) bool {
-			return successfulStats[i].Delay < successfulStats[j].Delay
+			return successfulStats[i].Score < successfulStats[j].Score
 		})
 		for i, s := range successfulStats {
 			if i < 5 {
-				logMuted("  - ✅ [成功] %s: %d ms", formatNode(s.Name), s.Delay)
+				logMuted("  - ✅ [排名 %d] %s: 延遲 %d ms, 抖動 %d ms, 綜合 %d", i+1, formatNode(s.Name), s.AvgDelay, s.Jitter, s.Score)
 			}
 		}
 		if len(successfulStats) > 5 {
 			logMuted("  - ... 及其他 %d 個成功節點", len(successfulStats)-5)
 		}
-	}
 
-	scores, _ := r.db.GetScores(r.GetConfig().HistoryDays)
+		// Short-Circuit Selection Phase
+		groupReports := make(map[string][]string)
+		var systemReports []string
+		systemReports = append(systemReports, fmt.Sprintf("退避：共 %s 個節點連線失敗，目前處於退避期", formatVal(totalBackoff)))
+		systemReports = append(systemReports, fmt.Sprintf("測速：本次共 Ping 測試 %s 個節點", formatVal(len(nodesToTest))))
 
-	// ---------------------------
-	// 報告資料收集
-	// ---------------------------
-	groupReports := make(map[string][]string)
-	var systemReports []string
-	systemReports = append(systemReports, fmt.Sprintf("退避：共 %s 個節點連線失敗，目前處於退避期", formatVal(totalBackoff)))
-	systemReports = append(systemReports, fmt.Sprintf("測速：本次共 Ping 測試 %s 個節點", formatVal(len(nodesToTest))))
+		var browserAllocCtx context.Context
+		var browserAllocCancel context.CancelFunc
 
-	// 3. 重新讀取 Clash 真實狀態（防止在 Ping 期間被 Failover 或手動切換）
-	for _, groupName := range r.GetConfig().TargetGroups {
-		freshGroup, err := r.api.GetProxyGroup(groupName)
-		if err == nil && freshGroup.Now != groupNowMap[groupName] {
-			logWarning("偵測到群組 [%s] 在 Ping 測試期間發生節點變更：%s → %s",
-				groupName, formatNode(groupNowMap[groupName]), formatNode(freshGroup.Now))
-			groupNowMap[groupName] = freshGroup.Now
-		}
-	}
-
-	// 4. 為每個群組獨立計算最佳節點候選人
-	groupHighestScoreNode := make(map[string]string)
-	groupFastestNode := make(map[string]string)
-	groupFastestFallbackReason := make(map[string]string) // 用於未開啟網頁測試時的決策原因
-
-	for _, groupName := range r.GetConfig().TargetGroups {
-		nodes, ok := groupNodesMap[groupName]
-		if !ok || len(nodes) == 0 {
-			groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprint("無法取得群組節點或群組為空"))
-			continue
+		if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
+			opts := append(chromedp.DefaultExecAllocatorOptions[:],
+				chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
+				chromedp.Flag("disable-cache", true),
+				chromedp.Flag("incognito", true),
+			)
+			browserAllocCtx, browserAllocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
+			defer browserAllocCancel()
 		}
 
-		fastestNode := ""
-		fastestBrowserLoad := math.MaxFloat64
+		urlTestCache := make(map[string]map[string]bool)
+		finalSwitches := make(map[string]string)
 
-		highestScoreNode := ""
-		highestScore := math.MinInt32
-		highestScoreBrowserLoad := 0.0
-
-		for _, name := range nodes {
-			s, tested := statResultsMap[name]
-			if !tested || s.Err != nil {
+		for _, groupName := range r.GetConfig().TargetGroups {
+			nodes, ok := groupNodesMap[groupName]
+			if !ok || len(nodes) == 0 {
 				continue
 			}
 
-			scoreData, okScore := scores[s.Name]
-			
-			// 計算網頁開啟預估時間
-			var browserLoad float64
-			if okScore && scoreData.AvgBrowserLoadTime > 0 {
-				browserLoad = scoreData.AvgBrowserLoadTime
-			} else {
-				// 尚未測試過網頁的節點，使用當前 Ping * 10 作為暫代值
-				browserLoad = float64(s.Delay * 10)
-			}
+			currentNow := groupNowMap[groupName]
+			logGroupTitle(groupName)
 
-			if browserLoad < fastestBrowserLoad {
-				fastestBrowserLoad = browserLoad
-				fastestNode = s.Name
-			}
-
-			if okScore && scoreData.Score > highestScore {
-				highestScore = scoreData.Score
-				highestScoreNode = s.Name
-				highestScoreBrowserLoad = browserLoad
-			}
-		}
-
-		if fastestNode == "" {
-			groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprint("決策：所有參與測試的節點皆失敗，保留目前節點"))
-			continue
-		}
-
-		groupHighestScoreNode[groupName] = highestScoreNode
-		groupFastestNode[groupName] = fastestNode
-
-		// 如果未開啟網頁測試，提早寫入 fallback 的決策原因
-		if !r.GetConfig().EnableBrowserTest {
-			reason := colorInfo.Sprint("網頁開啟速度最快")
-			if highestScoreNode != "" && highestScoreNode != fastestNode {
-				diff := highestScoreBrowserLoad - fastestBrowserLoad
-				if diff <= float64(r.GetConfig().BrowserToleranceMs) {
-					reason = colorSuccess.Sprintf("質量分最高，且預估網頁開啟與最快差距僅 %d ms", int(diff))
-				} else {
-					reason = colorWarning.Sprintf("高分節點預估網頁較慢 (落後 %d ms 超過容忍度)，因此選預估最快節點", int(diff))
-				}
-			}
-			groupFastestFallbackReason[groupName] = reason
-		}
-	}
-
-	// 5. 反壟斷公平探索機制 (Monopoly Breaker) & 頻寬測速
-	targetIntervalDuration := time.Duration(r.GetConfig().BandwidthTestInterval) * time.Minute
-	explorationDuration := time.Duration(r.GetConfig().ExplorationCooldown) * time.Minute
-
-	scores, _ = r.db.GetScores(r.GetConfig().HistoryDays)
-
-	alreadyTestedInCycle := make(map[string]bool)
-	preflightResults := make(map[string]int) // 儲存候選人即時的平均試飛成績
-
-	var browserAllocCtx context.Context
-	var browserAllocCancel context.CancelFunc
-
-	if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
-		opts := append(chromedp.DefaultExecAllocatorOptions[:],
-			chromedp.ProxyServer(r.GetConfig().ClashProxyURL),
-			chromedp.Flag("disable-cache", true),
-			chromedp.Flag("incognito", true), // This provides general incognito mode instead of individual profiles
-		)
-		browserAllocCtx, browserAllocCancel = chromedp.NewExecAllocator(context.Background(), opts...)
-		defer browserAllocCancel()
-	}
-
-	for _, groupName := range r.GetConfig().TargetGroups {
-		nodes, ok := groupNodesMap[groupName]
-		if !ok || len(nodes) == 0 {
-			continue
-		}
-
-		currentNow := groupNowMap[groupName]
-		highestNode := groupHighestScoreNode[groupName]
-		fastestNode := groupFastestNode[groupName]
-		var candidatesToTest []string
-
-		candidatesMap := make(map[string]bool)
-		addCandidate := func(name string) {
-			if name != "" && !candidatesMap[name] {
-				candidatesMap[name] = true
-				candidatesToTest = append(candidatesToTest, name)
-			}
-		}
-
-		// 必定加入「實際在位節點 (Current Node)」
-		addCandidate(currentNow)
-		// 加入「最高分節點 (Highest Score Node)」
-		addCandidate(highestNode)
-		// 加入「歷史最快節點 (Fastest Node)」
-		addCandidate(fastestNode)
-
-		// 尋找一位「面試節點 (Exploration Node)」
-		explorationCandidate := ""
-		highestTotalScore := -999999
-		for _, name := range nodes {
-			sc, ok := scores[name]
-			if !ok || sc.SuccessRate < 0.8 {
-				continue
-			}
-			// 排除掉已經在名單內的節點
-			if candidatesMap[name] {
-				continue
-			}
-			// 檢查面試冷卻期
-			r.stateMutex.RLock()
-			lastInt := r.lastInterviewTime[name]
-			r.stateMutex.RUnlock()
-			if isManual || time.Since(lastInt) >= explorationDuration {
-				// 根據「總得分 (sc.Score)」來尋找名次最高且已經過冷卻期的節點
-				if sc.Score > highestTotalScore {
-					highestTotalScore = sc.Score
-					explorationCandidate = name
-				}
-			}
-		}
-
-		addCandidate(explorationCandidate)
-
-		if len(candidatesToTest) == 0 {
-			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprint("⏳ 測速：無節點可測"))
-			continue
-		}
-
-		// 標示接下來的測速屬於哪一個群組
-		logGroupTitle(groupName)
-
-		// 針對 candidatesToTest 中的每一個候選人進行測試
-		for _, candidate := range candidatesToTest {
-			if alreadyTestedInCycle[candidate] {
-				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("⏭️ 測速：本週期已測過 %s，跳過重複測試", formatNode(candidate)))
-				continue
-			}
-
-			// 準備測速 (借用群組)
-			var borrowGroup string
-			var originalTarget string
-
-			if r.GetConfig().DedicatedTestGroup != "" {
-				borrowGroup = r.GetConfig().DedicatedTestGroup
-				if g, err := r.api.GetProxyGroup(borrowGroup); err == nil {
-					originalTarget = g.Now
-				}
-			} else {
-				borrowGroup = groupName
-				originalTarget = groupNowMap[groupName]
-			}
-
-			isCurrent := (candidate == currentNow)
-			isHighest := (candidate == highestNode)
-			isFastest := (candidate == fastestNode)
-			
-			var tags []string
-			if isCurrent { tags = append(tags, "在位") }
-			if isHighest { tags = append(tags, "最高分") }
-			if isFastest { tags = append(tags, "最快") }
-			
-			tag := ""
-			if len(tags) > 0 {
-				tag = " (" + strings.Join(tags, ", ") + ")"
-			} else {
-				tag = " (面試)"
-			}
-
-			if isCurrent {
-				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("👑 測速對象%s：%s", tag, formatNode(candidate)))
-			} else if candidate == explorationCandidate {
-				groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("🎯 測速對象%s：%s", tag, formatNode(candidate)))
-			} else {
-				groupReports[groupName] = append(groupReports[groupName], colorWarning.Sprintf("🛫 測速對象%s：%s", tag, formatNode(candidate)))
-			}
-
-			if candidate != originalTarget {
-				err := r.api.SelectProxy(borrowGroup, candidate)
-				if err != nil {
-					if !r.checkClashStatus() {
-						logError("🚨 準備切換至測試節點時偵測到 Clash API 失聯，本次循環作廢！")
-						return
+			var groupCandidates []nodeStat
+			for _, stat := range successfulStats {
+				for _, n := range nodes {
+					if n == stat.Name {
+						groupCandidates = append(groupCandidates, stat)
+						break
 					}
-					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("測速：無法切換至測試節點 %s", formatNode(candidate)))
+				}
+			}
+
+			if len(groupCandidates) == 0 {
+				groupReports[groupName] = append(groupReports[groupName], colorError.Sprint("🚫 此群組所有節點皆 Ping 失敗，維持原狀"))
+				continue
+			}
+
+			var currentStat nodeStat
+			hasCurrent := false
+			for _, stat := range groupCandidates {
+				if stat.Name == currentNow {
+					currentStat = stat
+					hasCurrent = true
+					break
+				}
+			}
+
+			bestNode := groupCandidates[0]
+			
+			if hasCurrent && bestNode.Name != currentNow {
+				if currentStat.Score - bestNode.Score <= r.GetConfig().ToleranceMs {
+					groupReports[groupName] = append(groupReports[groupName], colorInfo.Sprintf("⚖️ 目前節點 %s (%d ms) 與最佳節點 %s (%d ms) 差距在容忍度內，優先使用目前節點", formatNode(currentNow), currentStat.Score, formatNode(bestNode.Name), bestNode.Score))
+					var newCandidates []nodeStat
+					newCandidates = append(newCandidates, currentStat)
+					for _, stat := range groupCandidates {
+						if stat.Name != currentNow {
+							newCandidates = append(newCandidates, stat)
+						}
+					}
+					groupCandidates = newCandidates
+				}
+			}
+
+			var targetNode string
+			var targetReason string
+
+			for _, stat := range groupCandidates {
+				candidate := stat.Name
+				
+				if !r.GetConfig().EnableBrowserTest {
+					targetNode = candidate
+					targetReason = fmt.Sprintf("未開啟網頁測試，直接選用綜合分數最佳 (%d ms)", stat.Score)
+					break
+				}
+
+
+
+				filter := r.getGroupFilter(groupName)
+				testURLs := append([]string(nil), r.GetConfig().BrowserTestURLs...)
+				if filter.CheckChatGPT {
+					testURLs = append(testURLs, "https://chatgpt.com")
+				}
+				if filter.CheckGemini {
+					testURLs = append(testURLs, "https://gemini.google.com/app")
+				}
+				if filter.CheckAntigravity {
+					testURLs = append(testURLs, "https://generativelanguage.googleapis.com")
+				}
+
+				if urlTestCache[candidate] == nil {
+					urlTestCache[candidate] = make(map[string]bool)
+				}
+
+				allCachedAndSuccess := true
+				anyCachedFailed := false
+				for _, targetURL := range testURLs {
+					if success, exists := urlTestCache[candidate][targetURL]; exists {
+						if !success {
+							anyCachedFailed = true
+							break
+						}
+					} else {
+						allCachedAndSuccess = false
+					}
+				}
+
+				if anyCachedFailed {
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 驗證失敗：部分服務在快取中已失敗，淘汰並順延: %s", formatNode(candidate)))
 					continue
 				}
-			}
 
-			if candidate == explorationCandidate {
-				r.stateMutex.Lock()
-				r.lastInterviewTime[candidate] = time.Now()
-				r.stateMutex.Unlock()
-			}
-			alreadyTestedInCycle[candidate] = true
+				if allCachedAndSuccess {
+					targetNode = candidate
+					targetReason = fmt.Sprintf("共用跨群組快取：綜合分數 (%d ms) 且各項服務驗證皆成功", stat.Score)
+					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 驗證通過：共用快取 %s 支援所有必要服務", formatNode(candidate)))
+					break
+				}
 
-			// 1. 執行極限頻寬測速 (受 bandwidth_test_interval 限制)
-			if isManual || time.Since(r.lastBandwidthTest[candidate]) >= targetIntervalDuration {
-				logInfo("開始對節點 %s%s 進行極限頻寬測試...", formatNode(candidate), tag)
-
-				r.lastBandwidthTest[candidate] = time.Now()
-				speedKBps, totalBytes, err := r.api.TestBandwidth(r.GetConfig().BandwidthTestURL, r.GetConfig().ClashProxyURL, 15*time.Second)
-
-				if err != nil {
-					logWarning("頻寬測試失敗或超時: %s (錯誤: %v)", formatNode(candidate), err)
-					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("💥 下載%s：失敗或超時", tag))
-					// V3: 頻寬測試失敗插入 3 筆懲罰，防止分數快速恢復
-					for i := 0; i < 3; i++ {
-						r.db.InsertLog(candidate, 9999, false)
+				var borrowGroup string
+				var originalTarget string
+				if r.GetConfig().DedicatedTestGroup != "" {
+					borrowGroup = r.GetConfig().DedicatedTestGroup
+					if g, err := r.api.GetProxyGroup(borrowGroup); err == nil {
+						originalTarget = g.Now
 					}
 				} else {
-					mbps := (speedKBps / 1024.0)
-					consumedMB := float64(totalBytes) / (1024.0 * 1024.0)
-					logSuccess("頻寬測試完成: %s 下載達 %s MB/s (共消耗 %s MB)", formatNode(candidate), formatVal(fmt.Sprintf("%.2f", mbps)), formatVal(fmt.Sprintf("%.1f", consumedMB)))
-					groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("📈 下載%s：%s MB/s", tag, formatVal(fmt.Sprintf("%.2f", mbps))))
-					r.db.InsertBandwidthLog(candidate, speedKBps, totalBytes)
+					borrowGroup = groupName
+					originalTarget = groupNowMap[groupName]
 				}
-			} else {
-				logMuted("節點 %s%s 處於下載測速冷卻期間，跳過極限頻寬測試。", formatNode(candidate), tag)
-				groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("⏳ 下載%s：冷卻中，跳過", tag))
-			}
 
-			// 2. 無頭瀏覽器網頁開啟測試 (只要被選中就一定會測)
-			if r.GetConfig().EnableBrowserTest && len(r.GetConfig().BrowserTestURLs) > 0 {
-				logInfo("開始使用無頭瀏覽器測試網頁連通性: %s%s...", formatNode(candidate), tag)
+				if borrowGroup == groupName {
+					r.activeBorrowing.Store(true)
+				}
+				
+				if candidate != originalTarget {
+					err := r.api.SelectProxy(borrowGroup, candidate)
+					if err != nil {
+						if !r.checkClashStatus() {
+							logError("🚨 準備切換至測試節點時偵測到 Clash API 失聯！")
+							return
+						}
+						groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("測速：無法切換至測試節點 %s", formatNode(candidate)))
+						if borrowGroup == groupName {
+							r.activeBorrowing.Store(false)
+						}
+						continue
+					}
+				}
 
-				for _, targetURL := range r.GetConfig().BrowserTestURLs {
-					// 直接從 Allocator 建立新 Tab 測速，避免 Incognito Profile 建立失敗的問題
+				logInfo("使用無頭瀏覽器測試: %s...", formatNode(candidate))
+				allSuccess := true
+				var totalLoadTime int
+				for _, targetURL := range testURLs {
+
+					var checkingWhat string
+					if strings.Contains(targetURL, "chatgpt.com") {
+						checkingWhat = "ChatGPT"
+					} else if strings.Contains(targetURL, "gemini.google.com") {
+						checkingWhat = "Gemini"
+					} else if strings.Contains(targetURL, "generativelanguage.googleapis") {
+						checkingWhat = "Antigravity"
+					} else {
+						checkingWhat = "基礎連線 (" + targetURL + ")"
+					}
+
+					if success, exists := urlTestCache[candidate][targetURL]; exists {
+						if success {
+							logInfo("  ➤ 檢查 %s 中... (%s) [略過: 使用成功快取]", formatNode(candidate), checkingWhat)
+							continue
+						}
+					}
+
 					ctx, cancelCtx := chromedp.NewContext(browserAllocCtx)
-
 					ctx, cancelTimeout := context.WithTimeout(ctx, 15*time.Second)
 
+					logInfo("  ➤ 檢查 %s 中... (%s)", formatNode(candidate), checkingWhat)
+
+					var innerText string
 					startTime := time.Now()
 					err := chromedp.Run(ctx,
 						chromedp.Navigate(targetURL),
 						chromedp.WaitReady("body", chromedp.ByQuery),
+						chromedp.Evaluate(`document.body.innerText`, &innerText),
 					)
 					loadTimeMs := int(time.Since(startTime).Milliseconds())
 
@@ -812,273 +866,140 @@ func (r *Rover) runCheckCycle(isManual bool) {
 					cancelCtx()
 
 					if err != nil {
-						logWarning("網頁開啟失敗: %s (目標: %s, 錯誤: %v)", formatNode(candidate), targetURL, err)
-						groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 網頁%s：開啟 %s 失敗", tag, targetURL))
+						logWarning("  ❌ 服務連線超時或失敗: %s (%v)", checkingWhat, err)
+						urlTestCache[candidate][targetURL] = false
 						r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
-						preflightResults[candidate] = 99999 // 失敗給予極大值
+						allSuccess = false
+						break 
 					} else {
-						logSuccess("網頁成功開啟: %s (目標: %s, 耗時 %d ms)", formatNode(candidate), targetURL, loadTimeMs)
-						groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 網頁%s：成功開啟 %s (%d ms)", tag, targetURL, loadTimeMs))
-						r.db.InsertBrowserLog(candidate, targetURL, true, loadTimeMs)
-						// 儲存試飛成績 (如果有多個 URL 則取平均或保留最新一次，這裡為了簡化直接保留最後一次或覆蓋)
-						if existing, ok := preflightResults[candidate]; ok && existing != 99999 {
-							preflightResults[candidate] = (existing + loadTimeMs) / 2
-						} else {
-							preflightResults[candidate] = loadTimeMs
+						// 檢查是否有被地區阻擋
+						lowerText := strings.ToLower(innerText)
+						blocked := false
+						if strings.Contains(targetURL, "chatgpt.com") {
+							if strings.Contains(lowerText, "access denied") || strings.Contains(lowerText, "not available in your country") {
+								blocked = true
+							}
+						} else if strings.Contains(targetURL, "gemini.google.com") {
+							if strings.Contains(lowerText, "isn't supported in your country") || strings.Contains(lowerText, "未在該地區推出") || strings.Contains(lowerText, "not available") {
+								blocked = true
+							}
+						} else if strings.Contains(targetURL, "generativelanguage.googleapis") {
+							if strings.Contains(lowerText, "user location is not supported") {
+								blocked = true
+							}
 						}
+
+						if blocked {
+							logWarning("  ❌ 服務驗證失敗 (地區限制或封鎖): %s", checkingWhat)
+							urlTestCache[candidate][targetURL] = false
+							r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
+							allSuccess = false
+							break
+						}
+
+						logSuccess("  ✅ 服務驗證通過: %s (%d ms)", checkingWhat, loadTimeMs)
+						urlTestCache[candidate][targetURL] = true
+						r.db.InsertBrowserLog(candidate, targetURL, true, loadTimeMs)
+						totalLoadTime += loadTimeMs
 					}
+				}
+
+				if candidate != originalTarget && originalTarget != "" {
+					r.api.SelectProxy(borrowGroup, originalTarget)
+				}
+				if borrowGroup == groupName {
+					r.activeBorrowing.Store(false)
+				}
+
+				
+				if allSuccess {
+					targetNode = candidate
+					targetReason = fmt.Sprintf("綜合分數 (%d ms) 且各項服務驗證皆成功 (%d ms)", stat.Score, totalLoadTime)
+					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 驗證通過：節點 %s 支援所有必要服務", formatNode(candidate)))
+					break
+				} else {
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 驗證失敗：節點 %s 未通過服務驗證，淘汰並順延", formatNode(candidate)))
 				}
 			}
 
-			// 切回原本的節點
-			if candidate != originalTarget && originalTarget != "" {
-				r.api.SelectProxy(borrowGroup, originalTarget)
-			}
-		}
-	}
-
-	// Phase 6.5: 最終決選審查 (Real-time Decision)
-	finalSwitches := make(map[string]string)
-
-	for _, groupName := range r.GetConfig().TargetGroups {
-		nodes, ok := groupNodesMap[groupName]
-		if !ok || len(nodes) == 0 {
-			continue
-		}
-
-		highestNode := groupHighestScoreNode[groupName]
-		fastestNode := groupFastestNode[groupName]
-		currentNow := groupNowMap[groupName]
-
-		if !r.GetConfig().EnableBrowserTest {
-			// 如果沒有開啟無頭瀏覽器測試，使用歷史預估決定
-			if fastestNode == "" {
+			if targetNode == "" {
+				groupReports[groupName] = append(groupReports[groupName], colorError.Sprint("🚫 所有候選節點網頁測試皆失敗，維持原狀"))
 				continue
-			}
-			targetNode := fastestNode
-			// 根據 Phase 4 計算的 fallback reason 找出 targetNode
-			if strings.Contains(groupFastestFallbackReason[groupName], "質量分最高") {
-				targetNode = highestNode
 			}
 
 			if targetNode != currentNow && currentNow != "" {
-				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("⚖️ 決策邏輯：%s", groupFastestFallbackReason[groupName]))
-				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
-				finalSwitches[groupName] = targetNode
-
-				if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
-					beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
-				}
-			} else {
-				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 狀態：目前的節點 %s 依然是最佳選擇，無需切換", formatNode(currentNow)))
-			}
-			continue
-		}
-
-		// 有開啟網頁測試，基於即時試飛成績 (preflightResults) 做決定
-		realFastestNode := ""
-		realFastestLoad := 999999
-
-		for candidate, loadMs := range preflightResults {
-			// 確認 candidate 在此群組內
-			isNodeInGroup := false
-			for _, n := range nodes {
-				if n == candidate {
-					isNodeInGroup = true
-					break
-				}
-			}
-			if !isNodeInGroup {
-				continue
-			}
-
-			if loadMs > 0 && loadMs < realFastestLoad {
-				realFastestLoad = loadMs
-				realFastestNode = candidate
-			}
-		}
-
-		if realFastestNode == "" {
-			groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🚫 所有候選節點網頁試飛皆失敗，維持原節點"))
-			continue
-		}
-
-		targetNode := realFastestNode
-		reason := ""
-
-		highestLoadMs, hasHighest := preflightResults[highestNode]
-		if hasHighest && highestLoadMs != 99999 {
-			diff := highestLoadMs - realFastestLoad
-			if highestNode == realFastestNode {
-				targetNode = highestNode
-				reason = colorSuccess.Sprintf("%s 既是最高分節點，也是網頁測試打開速度最快的節點 (實測 %d ms)", formatNode(highestNode), highestLoadMs)
-			} else if diff <= r.GetConfig().BrowserToleranceMs {
-				targetNode = highestNode
-				reason = colorSuccess.Sprintf("質量最高分節點實測 %d ms，與最快節點 (%s, %d ms) 差距 %d ms 在容忍值內，優先選用最高分", highestLoadMs, formatNode(realFastestNode), realFastestLoad, diff)
-			} else {
-				reason = colorWarning.Sprintf("最高分節點實測 %d ms，落後最快節點 %d ms 超過容忍值，選擇最快節點 %s", highestLoadMs, diff, formatNode(realFastestNode))
-			}
-		} else {
-			reason = colorWarning.Sprintf("最高分節點未測或失敗，選擇最快節點 %s (%d ms)", formatNode(realFastestNode), realFastestLoad)
-		}
-
-		if targetNode != currentNow && currentNow != "" {
-			if r.IsGroupLocked(groupName) {
-				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🔒 最終決策：%s，但群組已鎖定，維持 %s", reason, formatNode(currentNow)))
-			} else {
-				groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：%s，核准切換！", reason))
-				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
-				finalSwitches[groupName] = targetNode
-				
-				if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
-					beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
-				}
-			}
-		} else {
-			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 最終決策：%s，維持現有節點 %s", reason, formatNode(currentNow)))
-		}
-	}
-
-	// 6. 統一執行所有主要群組的最終節點切換
-	successSwitches := 0
-	failSwitches := 0
-	if len(finalSwitches) > 0 {
-		for groupName, targetNode := range finalSwitches {
-			if err := r.api.SelectProxy(groupName, targetNode); err != nil {
-				failSwitches++
-				logError("群組 [%s] 切換至 %s 失敗: %v", groupName, formatNode(targetNode), err)
-			} else {
-				// 驗證切換是否真的生效
-				verifyGroup, verifyErr := r.api.GetProxyGroup(groupName)
-				if verifyErr == nil && verifyGroup.Now != targetNode {
-					logError("⚠️ 切換驗證失敗：群組 [%s] 預期 %s 但 Clash 實際為 %s",
-						groupName, formatNode(targetNode), formatNode(verifyGroup.Now))
-					failSwitches++
+				if r.IsGroupLocked(groupName) {
+					groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🔒 最終決策：發現更佳節點 %s (%s)，但群組已鎖定，維持 %s", formatNode(targetNode), targetReason, formatNode(currentNow)))
 				} else {
-					successSwitches++
+					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：切換至 %s (%s)", formatNode(targetNode), targetReason))
+					systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
+					finalSwitches[groupName] = targetNode
+					
+					if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
+						beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
+					}
+				}
+			} else {
+				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 最終決策：維持現有節點 %s (%s)", formatNode(currentNow), targetReason))
+			}
+		}
+
+		successSwitches := 0
+		failSwitches := 0
+		if len(finalSwitches) > 0 {
+			for groupName, targetNode := range finalSwitches {
+				if err := r.api.SelectProxy(groupName, targetNode); err != nil {
+					failSwitches++
+					logError("群組 [%s] 切換至 %s 失敗: %v", groupName, formatNode(targetNode), err)
+				} else {
+					verifyGroup, verifyErr := r.api.GetProxyGroup(groupName)
+					if verifyErr == nil && verifyGroup.Now != targetNode {
+						logError("⚠️ 切換驗證失敗：群組 [%s] 預期 %s 但 Clash 實際為 %s",
+							groupName, formatNode(targetNode), formatNode(verifyGroup.Now))
+						failSwitches++
+					} else {
+						successSwitches++
+					}
+				}
+			}
+			systemReports = append(systemReports, fmt.Sprintf("切換：成功切換 %d 個群組, 失敗 %d 個", successSwitches, failSwitches))
+		} else {
+			systemReports = append(systemReports, "切換：無需切換，維持現狀")
+		}
+
+		logReportStart()
+		for _, groupName := range r.GetConfig().TargetGroups {
+			logGroupTitle(groupName)
+			lines := groupReports[groupName]
+			if len(lines) == 0 {
+				logTreeItem(true, "無狀態更新")
+			} else {
+				for i, line := range lines {
+					logTreeItem(i == len(lines)-1, "%s", line)
 				}
 			}
 		}
-		systemReports = append(systemReports, fmt.Sprintf("切換：成功切換 %d 個群組, 失敗 %d 個", successSwitches, failSwitches))
-	} else {
-		systemReports = append(systemReports, "切換：無需切換，維持現狀")
-	}
 
-	// ---------------------------
-	// 列印樹狀結構報告
-	// ---------------------------
-	logReportStart()
-	for _, groupName := range r.GetConfig().TargetGroups {
-		logGroupTitle(groupName)
-		lines := groupReports[groupName]
-		if len(lines) == 0 {
-			logTreeItem(true, "無狀態更新")
-		} else {
-			for i, line := range lines {
-				logTreeItem(i == len(lines)-1, "%s", line)
-			}
+		logGroupTitle("🔧 系統狀態")
+		for i, line := range systemReports {
+			logTreeItem(i == len(systemReports)-1, "%s", line)
 		}
-	}
-
-	logGroupTitle("🔧 系統狀態")
-	for i, line := range systemReports {
-		logTreeItem(i == len(systemReports)-1, "%s", line)
 	}
 }
 
-func (r *Rover) runFailoverWatchdog(ctx context.Context) {
-	logInfo("啟動秒級急救機制 Watchdog (偵測間隔: %s 秒)", formatVal(r.GetConfig().FailoverInterval))
-	ticker := time.NewTicker(time.Duration(r.GetConfig().FailoverInterval) * time.Second)
-	defer ticker.Stop()
 
-	consecutiveFails := make(map[string]int)
+type GroupFilter struct {
+	KeywordRegex string `json:"keyword_regex"`
+	CheckChatGPT     bool   `json:"check_chatgpt"`
+	CheckGemini      bool   `json:"check_gemini"`
+	CheckAntigravity bool   `json:"check_antigravity"`
+}
 
-	for {
-		select {
-		case <-ctx.Done():
-			logInfo("停止秒級急救機制 Watchdog (Context Cancelled)")
-			return
-		case <-ticker.C:
-			if r.IsRunning.Load() {
-				// 如果主測速引擎正在執行中，不要干擾
-				continue
-			}
-			
-			if r.GetIsPaused() {
-				// 系統暫停時，不執行急救機制
-				continue
-			}
-
-			// 針對每個群組檢查目前的節點
-			for _, groupName := range r.GetConfig().TargetGroups {
-				group, err := r.api.GetProxyGroup(groupName)
-				if err != nil || group.Now == "" {
-					continue
-				}
-
-				activeNode := group.Now
-				testUrl := r.pickRandomURL()
-				// 只等 3 秒的超時，要求快速回應
-				_, err = r.api.TestProxyDelay(activeNode, testUrl, 3*time.Second)
-
-				if err != nil {
-					consecutiveFails[groupName]++
-					if consecutiveFails[groupName] == 1 {
-						logGroup(groupName, "%s", colorWarning.Sprintf("節點 %s 失去回應，進入黃色警戒...", formatNode(activeNode)))
-					}
-
-					if consecutiveFails[groupName] >= r.GetConfig().FailoverMaxFails {
-						logFailover("[%s] 節點 %s 已癱瘓！觸發秒級急救！", groupName, activeNode)
-
-						// V3: 寫入 5 筆懲罰紀錄，使懲罰效果不會被快速稀釋
-						for i := 0; i < 5; i++ {
-							r.db.InsertLog(activeNode, 9999, false)
-						}
-
-						if r.IsGroupLocked(groupName) {
-							logFailover("🔒 群組 [%s] 已鎖定，略過急救切換機制", groupName)
-						} else {
-							// 找備胎
-							scores, _ := r.db.GetScores(r.GetConfig().HistoryDays)
-							var bestAlt string
-							var highestScore = -999999
-
-							for _, candidate := range group.All {
-								if candidate == activeNode {
-									continue
-								}
-								if sc, ok := scores[candidate]; ok {
-									if sc.Score > highestScore {
-										highestScore = sc.Score
-										bestAlt = candidate
-									}
-								}
-							}
-
-							if bestAlt != "" {
-								r.api.SelectProxy(groupName, bestAlt)
-								logFailover("群組 [%s] 已觸發急救機制！預計切換至: %s", groupName, formatNode(bestAlt))
-
-								if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnFailover {
-									beeep.Notify("🚨 Rover 急救成功", fmt.Sprintf("已為您攔截斷線，群組 [%s] 切換至 %s", groupName, bestAlt), "")
-								}
-
-								BroadcastRefresh()
-							} else {
-								logFailover("[%s] 找不到其他可用的備用節點！", groupName)
-							}
-						}
-
-						// 重置計數
-						consecutiveFails[groupName] = 0
-					}
-				} else {
-					if consecutiveFails[groupName] > 0 {
-						logGroup(groupName, "%s", colorSuccess.Sprintf("節點 %s 恢復連線，解除黃色警戒。", formatNode(activeNode)))
-						consecutiveFails[groupName] = 0
-					}
-				}
-			}
-		}
+func (r *Rover) getGroupFilter(groupName string) GroupFilter {
+	var f GroupFilter
+	val, err := r.db.GetMetadata("group_filter_" + groupName)
+	if err == nil && val != "" {
+		json.Unmarshal([]byte(val), &f)
 	}
+	return f
 }

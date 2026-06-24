@@ -415,6 +415,7 @@
             animation: slideIn 0.3s ease-out;
         }
         @keyframes slideIn { from{transform: translateX(-10px); opacity:0;} to{transform: translateX(0); opacity:1;} }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
 
         .log-time { color: var(--md-sys-color-outline); margin-right: 12px; }
         .log-badge { padding: 2px 6px; border-radius: 4px; font-size: 11px; margin-right: 12px; font-weight: bold; }
@@ -436,6 +437,7 @@
         <div class="app-title">
             <img id="app-logo-img" src="" alt="Logo" style="width: 32px; height: 32px; border-radius: 8px;">
             <div class="logo" style="margin-bottom: 0;">Clash Node Rover</div>
+            <div class="badge primary" title="近期日誌筆數"><span class="material-symbols-outlined" style="font-size:14px">receipt_long</span> <span id="log-text">--</span></div>
         </div>
         <div style="display: flex; gap: 12px; align-items: center;">
             <button class="btn secondary icon-btn" onclick="toggleTheme()" title="Toggle Theme">
@@ -457,6 +459,7 @@
             <button id="btn-dashboard" class="seg-btn active" onclick="switchTab('dashboard')">
                 <span class="material-symbols-outlined">dashboard</span> 儀表板
             </button>
+
             <button id="btn-logs" class="seg-btn" onclick="switchTab('logs')">
                 <span class="material-symbols-outlined">terminal</span> 系統日誌
             </button>
@@ -468,19 +471,17 @@
             </div>
 
             <div class="card">
-                <h2 class="card-title"><span class="material-symbols-outlined">leaderboard</span> 節點排行榜 (EMA)</h2>
+                <h2 class="card-title"><span class="material-symbols-outlined">leaderboard</span> 節點排行榜 (即時)</h2>
                 <div class="table-container">
                     <table>
                         <thead>
                             <tr>
                                 <th>排名</th>
                                 <th>節點名稱</th>
-                                <th>動態分數</th>
-                                <th>Ping 成功率</th>
-                                <th>網頁體驗</th>
-                                <th>網頁載入</th>
-                                <th>上次測試</th>
-                                <th>上次面試</th>
+                                <th>綜合分數 (越低越好)</th>
+                                <th>平均延遲</th>
+                                <th>抖動 (Jitter)</th>
+                                <th>群組狀態</th>
                             </tr>
                         </thead>
                         <tbody id="tbody">
@@ -490,6 +491,8 @@
                 </div>
             </div>
         </div>
+
+
 
         <div id="tab-logs" class="tab-content">
             <div class="card">
@@ -544,7 +547,62 @@
             document.querySelectorAll('.seg-btn').forEach(el => el.classList.remove('active'));
             document.getElementById('tab-' + tabId).classList.add('active');
             document.getElementById('btn-' + tabId).classList.add('active');
+
         }
+
+        
+        const REGION_PRESETS = {
+            'US': 'US|United States|us|美國|美国',
+            'HK': 'HK|Hong Kong|香港',
+            'TW': 'TW|Taiwan|台灣|台湾|臺',
+            'JP': 'JP|Japan|日本',
+            'SG': 'SG|Singapore|新加坡|狮城',
+            'UK': 'UK|United Kingdom|英國|英国'
+        };
+
+        window.inlineSaveFilter = async function(groupName) {
+            const regionCheckboxes = document.querySelectorAll('.filter-region-' + CSS.escape(groupName));
+            let selectedRegexes = [];
+            regionCheckboxes.forEach(cb => {
+                if(cb.checked && REGION_PRESETS[cb.value]) {
+                    selectedRegexes.push(REGION_PRESETS[cb.value]);
+                }
+            });
+            const finalRegex = selectedRegexes.join('|');
+            
+            const chatgptChecked = document.getElementById('filter-chatgpt-' + groupName).checked;
+            const geminiChecked = document.getElementById('filter-gemini-' + groupName).checked;
+            const antigravityChecked = document.getElementById('filter-antigravity-' + groupName).checked;
+
+            const data = {
+                keyword_regex: finalRegex,
+                check_chatgpt: chatgptChecked,
+                check_gemini: geminiChecked,
+                check_antigravity: antigravityChecked
+            };
+            await fetch('/api/groups/filter?group=' + encodeURIComponent(groupName), {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+        }
+        
+        // Remove old modal functions
+
+
+        function closeNodeModal() {
+            document.getElementById('nodeModal').classList.remove('active');
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+
 
         let chartInstances = {};
         window.previousScores = window.previousScores || {};
@@ -563,17 +621,50 @@
                     let lockIcon = g.locked ? 'lock' : 'lock_open';
                     let lockTitle = g.locked ? '點擊解鎖 (恢復自動切換)' : '點擊鎖定 (停止自動切換)';
                     
+                    const safeGroupName = escapeHtml(g.name);
+                    const rx = (g.filter && g.filter.keyword_regex) ? g.filter.keyword_regex : "";
+                    
+                    const isUS = rx.includes("US|");
+                    const isHK = rx.includes("HK|");
+                    const isTW = rx.includes("TW|");
+                    const isJP = rx.includes("JP|");
+                    const isSG = rx.includes("SG|");
+                    const isUK = rx.includes("UK|");
+
+                    const isChatGPT = (g.filter && g.filter.check_chatgpt) ? "checked" : "";
+                    const isGemini = (g.filter && g.filter.check_gemini) ? "checked" : "";
+                    const isAntigravity = (g.filter && g.filter.check_antigravity) ? "checked" : "";
+
                     html += '<div class="group-card">' +
                             '<div class="group-header" style="display:flex; justify-content:space-between; align-items:center;">' + 
                                 '<span>' + g.name + '</span>' +
-                                '<button class="' + lockBtnClass + '" onclick="toggleGroupLock(\'' + g.name + '\', ' + !g.locked + ')" title="' + lockTitle + '" style="width:32px; height:32px;"><span class="material-symbols-outlined" style="font-size:16px">' + lockIcon + '</span></button>' +
+                                '<button class="' + lockBtnClass + '" onclick="toggleGroupLock(\'' + safeGroupName + '\', ' + !g.locked + ')" title="' + lockTitle + '" style="width:32px; height:32px;"><span class="material-symbols-outlined" style="font-size:16px">' + lockIcon + '</span></button>' +
                             '</div>' +
                             '<div class="group-now">' + (g.now || '未選擇') + '</div>' +
                             (g.provider ? '<div class="badge primary" style="align-self: flex-start;"><span class="material-symbols-outlined" style="font-size:14px">corporate_fare</span> ' + g.provider + '</div>' : '') +
-                            '<div style="color: var(--md-sys-color-on-surface-variant); font-size:14px; margin-bottom:8px;">運行中 &bull; 共 ' + g.all_count + ' 個節點</div>' +
+                            '<div style="color: var(--md-sys-color-on-surface-variant); font-size:14px; margin-top:8px; margin-bottom:8px;">運行中 &bull; 共 ' + g.all_count + ' 個節點</div>' +
                             '<div style="display: flex; gap: 8px;">' +
                                 '<select id="select-' + g.name + '" style="flex:1; background: var(--md-sys-color-surface-container-high); color: var(--md-sys-color-on-surface); border: 1px solid var(--md-sys-color-outline); border-radius: 8px; padding: 8px;">' + options + '</select>' +
-                                '<button onclick="manualSwitch(\'' + g.name + '\')" class="btn" style="padding: 8px 16px;">切換</button>' +
+                                '<button onclick="manualSwitch(\'' + safeGroupName + '\')" class="btn" style="padding: 8px 16px;">切換</button>' +
+                            '</div>' +
+                            
+                            // Inline Filter Section
+                            '<div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--md-sys-color-outline-variant);">' +
+                                '<div style="font-size: 13px; font-weight: 500; margin-bottom: 8px; color: var(--md-sys-color-primary);">節點地區篩選</div>' +
+                                '<div style="display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px;">' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" value="US" class="filter-region-' + safeGroupName + '" ' + (isUS?'checked':'') + '> 🇺🇸 美國</label>' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" value="HK" class="filter-region-' + safeGroupName + '" ' + (isHK?'checked':'') + '> 🇭🇰 香港</label>' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" value="TW" class="filter-region-' + safeGroupName + '" ' + (isTW?'checked':'') + '> 🇹🇼 台灣</label>' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" value="JP" class="filter-region-' + safeGroupName + '" ' + (isJP?'checked':'') + '> 🇯🇵 日本</label>' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" value="SG" class="filter-region-' + safeGroupName + '" ' + (isSG?'checked':'') + '> 🇸🇬 新加坡</label>' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" value="UK" class="filter-region-' + safeGroupName + '" ' + (isUK?'checked':'') + '> 🇬🇧 英國</label>' +
+                                '</div>' +
+                                '<div style="font-size: 13px; font-weight: 500; margin-top: 12px; margin-bottom: 8px; color: var(--md-sys-color-primary);">必備服務驗證</div>' +
+                                '<div style="display: flex; gap: 12px; font-size: 13px;">' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" id="filter-chatgpt-' + safeGroupName + '" ' + isChatGPT + '> 🤖 ChatGPT</label>' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" id="filter-gemini-' + safeGroupName + '" ' + isGemini + '> ✨ Gemini</label>' +
+                                    '<label style="cursor:pointer; display:flex; align-items:center; gap:4px;"><input type="checkbox" onchange="inlineSaveFilter(\'' + safeGroupName + '\')" id="filter-antigravity-' + safeGroupName + '" ' + isAntigravity + '> 🚀 Antigravity</label>' +
+                                '</div>' +
                             '</div>' +
                         '</div>';
                 });
@@ -638,16 +729,7 @@
                     }
                     window.previousScores[node.Name] = node.Score;
                     
-                    const scRate = (node.SuccessRate * 100).toFixed(1) + '%';
-                    let successStyle = node.SuccessRate > 0.9 ? 'color: var(--md-sys-color-success)' : (node.SuccessRate > 0.5 ? 'color: var(--md-sys-color-warning)' : 'color: var(--md-sys-color-error)');
                     
-                    let webSuccessStr = '-';
-                    let webLoadStr = '-';
-                    if (node.BrowserTested) {
-                        webSuccessStr = '<span style="' + (node.BrowserSuccessRate>=0.9 ? 'color:var(--md-sys-color-success)' : (node.BrowserSuccessRate>=0.5 ? 'color:var(--md-sys-color-warning)' : 'color:var(--md-sys-color-error)')) + ';">' + (node.BrowserSuccessRate * 100).toFixed(0) + '%</span>';
-                        webLoadStr = node.AvgBrowserLoadTime > 0 ? (node.AvgBrowserLoadTime / 1000).toFixed(2) + ' s' : '<span style="color:var(--md-sys-color-error)">Timeout</span>';
-                    }
-
                     let providerTag = node.provider ? '<div class="badge primary" style="margin-top:4px; font-size: 10px;"><span class="material-symbols-outlined" style="font-size:12px">corporate_fare</span> ' + node.provider + '</div>' : '';
                     let groupBadges = '';
                     if (node.highest_in_groups && node.highest_in_groups.length > 0) {
@@ -657,23 +739,17 @@
                         groupBadges += '<div class="badge error" style="margin-top:4px; margin-left:4px; font-size: 10px;"><span class="material-symbols-outlined" style="font-size:12px">timer_off</span> 退避中 (' + node.backoff_remaining + ' 輪)</div>';
                     }
 
-                    let lastTestTime = Math.max(node.LastBandwidthTime || 0, node.LastBrowserTime || 0);
-                    let lastTestStr = lastTestTime ? timeAgo(lastTestTime) : '-';
-
-                    let interviewStr = '-';
                     if (node.last_interview_time > 0) {
                         const remainMin = node.cooldown_minutes - (Math.floor(Date.now() / 60000) - Math.floor(node.last_interview_time / 60));
                         interviewStr = remainMin <= 0 ? timeAgo(node.last_interview_time) + ' <span style="color:var(--md-sys-color-success)">(OK)</span>' : timeAgo(node.last_interview_time) + ' <span style="color:var(--md-sys-color-warning)">(' + remainMin + 'm)</span>';
                     }
 
                     tr.innerHTML = '<td>#' + (index + 1) + '</td>' +
-                        '<td style="font-weight:500;">' + escapeHtml(node.Name) + '<br>' + providerTag + groupBadges + '</td>' +
+                        '<td style="font-weight:500;">' + escapeHtml(node.Name) + '<br>' + providerTag + '</td>' +
                         '<td>' + scoreHtml + '</td>' +
-                        '<td style="' + successStyle + ';">' + scRate + '</td>' +
-                        '<td>' + webSuccessStr + '</td>' +
-                        '<td>' + webLoadStr + '</td>' +
-                        '<td style="color: var(--md-sys-color-on-surface-variant);">' + lastTestStr + '</td>' +
-                        '<td style="color: var(--md-sys-color-on-surface-variant);">' + interviewStr + '</td>';
+                        '<td>' + node.AvgDelay + ' ms</td>' +
+                        '<td>' + node.Jitter + ' ms</td>' +
+                        '<td>' + groupBadges + '</td>';
 
                     tbody.appendChild(tr);
                     const chartRow = document.getElementById('chart-row-' + safeId);
@@ -719,19 +795,10 @@
             chartRow.className = 'chart-row expanded-row';
             
             const node = window.nodeList[index];
-            const speedStr = node.AvgBandwidth > 0 ? (node.AvgBandwidth > 1000 ? (node.AvgBandwidth/1024).toFixed(2) + ' MB/s' : node.AvgBandwidth.toFixed(1) + ' KB/s') : '-';
-            let consumedStr = '-';
-            if (node.TotalConsumedBytes > 0) {
-                const mb = node.TotalConsumedBytes / (1024 * 1024);
-                consumedStr = mb >= 1024 ? (mb / 1024).toFixed(2) + ' GB' : mb.toFixed(1) + ' MB';
-            }
-
             let detailsHtml = '<div style="display:flex; gap:16px; padding:16px; margin-bottom:16px; background:var(--md-sys-color-surface-container); border-radius:16px;">' +
-                '<div style="flex:1"><div style="font-size:12px; color:var(--md-sys-color-on-surface-variant);">平均延遲</div><div style="font-size:18px;">' + node.AvgDelay.toFixed(0) + ' ms</div></div>' +
+                '<div style="flex:1"><div style="font-size:12px; color:var(--md-sys-color-on-surface-variant);">平均延遲</div><div style="font-size:18px;">' + node.AvgDelay + ' ms</div></div>' +
                 '<div style="flex:1"><div style="font-size:12px; color:var(--md-sys-color-on-surface-variant);">抖動 (Jitter)</div><div style="font-size:18px;">' + node.Jitter + ' ms</div></div>' +
-                '<div style="flex:1"><div style="font-size:12px; color:var(--md-sys-color-on-surface-variant);">樣本數</div><div style="font-size:18px;">' + (node.SampleCount || 0) + '</div></div>' +
-                '<div style="flex:1"><div style="font-size:12px; color:var(--md-sys-color-on-surface-variant);">平均速度</div><div style="font-size:18px;">' + speedStr + '</div></div>' +
-                '<div style="flex:1"><div style="font-size:12px; color:var(--md-sys-color-on-surface-variant);">已用流量</div><div style="font-size:18px;">' + consumedStr + '</div></div>' +
+                '<div style="flex:1"><div style="font-size:12px; color:var(--md-sys-color-on-surface-variant);">綜合分數</div><div style="font-size:18px;">' + node.Score + '</div></div>' +
             '</div>';
 
             chartRow.innerHTML = '<td colspan="8"><div style="padding: 16px;">' + detailsHtml + '<div class="chart-container"><canvas id="canvas-' + safeId + '"></canvas></div></div></td>';
@@ -857,5 +924,8 @@
         connectWebSocket();
         setInterval(checkStatus, 5000);
     </script>
+
+    
+
 </body>
 </html>

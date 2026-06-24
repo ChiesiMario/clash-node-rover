@@ -7,7 +7,7 @@ api_url: "http://127.0.0.1:9090"
 api_secret: ""
 
 # 背景檢查與測速的間隔時間 (例如 60s, 1m, 5m)
-check_interval: 5m
+check_interval: 3m
 
 # 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (例如 PROXY 或 🤖 Node Rover)
 target_groups:
@@ -27,7 +27,7 @@ test_urls:
   - "https://cloudflare.com"
 
 # Ping 測試的超時時間
-test_timeout: 5s
+test_timeout: 3s
 
 # 節點切換容忍度 (毫秒)。當新節點的綜合分數(Ping+Jitter)比目前節點快超過此數值時，才會進行切換，避免頻繁切換
 tolerance_ms: 10
@@ -47,16 +47,11 @@ clash_proxy_url: "http://127.0.0.1:7891"
 # 發生連線錯誤時的退避冷卻循環次數。失敗越多次，冷卻越久，最高不超過此數值
 max_backoff_cycles: 5
 
-
-
-# 秒級急救機制的連續失敗次數門檻 (達到此數字才觸發急救，防止網路瞬斷誤判)
-
 # 是否啟用無頭瀏覽器網頁測試 (實際開啟網頁測試連通性)
 enable_browser_test: true
 
 # 無頭瀏覽器測試的目標網址清單 (預設為 Google 與 YouTube)
 browser_test_urls:
-  - "https://www.google.com"
   - "https://www.youtube.com"
   - "https://github.com/ChiesiMario/clash-node-rover"
 

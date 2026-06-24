@@ -1,9 +1,10 @@
 package main
 
 import (
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -14,8 +15,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-//go:embed templates/index.html
-var indexHTML []byte
+//go:embed all:frontend/dist
+var frontendDist embed.FS
 
 var (
 	wsUpgrader = websocket.Upgrader{
@@ -67,7 +68,11 @@ func BroadcastSingleLog(entry WebLogEntry) {
 }
 
 func StartWebServer(db *DB, rover *Rover, port int) {
-	http.HandleFunc("/", handleIndex)
+		distFS, err := fs.Sub(frontendDist, "frontend/dist")
+	if err != nil {
+		log.Fatalf("無法載入前端資源: %v", err)
+	}
+	http.Handle("/", http.FileServer(http.FS(distFS)))
 
 	http.HandleFunc("/api/groups", func(w http.ResponseWriter, r *http.Request) {
 		type GroupStatus struct {
@@ -174,28 +179,39 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 		}
 
 		type StatNode struct {
-			Name              string   `json:"Name"`
-			AvgDelay          int      `json:"AvgDelay"`
-			Jitter            int      `json:"Jitter"`
-			Score             int      `json:"Score"`
-			Provider          string   `json:"provider"`
-			HighestInGroups   []string `json:"highest_in_groups"`
-			BackoffRemaining  int      `json:"backoff_remaining"`
+			Name                    string         `json:"Name"`
+			AvgDelay                int            `json:"AvgDelay"`
+			Jitter                  int            `json:"Jitter"`
+			Score                   int            `json:"Score"`
+			Provider                string         `json:"provider"`
+			HighestInGroups         []string       `json:"highest_in_groups"`
+			BackoffRemaining        int            `json:"backoff_remaining"`
+			BrowserBackoffRemaining map[string]int `json:"browser_backoff_remaining"`
+			IsDead                  bool           `json:"is_dead"`
 		}
 		
 		list := make([]StatNode, 0)
 		for _, sc := range statMap {
+			isDead := false
 			if sc.Err != nil {
-				continue
+				isDead = true
 			}
+			
+			score := sc.Score
+			if isDead {
+				score = 99999
+			}
+			
 			list = append(list, StatNode{
-				Name:              sc.Name,
-				AvgDelay:          sc.AvgDelay,
-				Jitter:            sc.Jitter,
-				Score:             sc.Score,
-				Provider:          GetNodeProvider(sc.Name),
-				HighestInGroups:   highestInGroups[sc.Name],
-				BackoffRemaining:  rover.GetBackoffRemaining(sc.Name),
+				Name:                    sc.Name,
+				AvgDelay:                sc.AvgDelay,
+				Jitter:                  sc.Jitter,
+				Score:                   score,
+				Provider:                GetNodeProvider(sc.Name),
+				HighestInGroups:         highestInGroups[sc.Name],
+				BackoffRemaining:        rover.GetBackoffRemaining(sc.Name),
+				BrowserBackoffRemaining: rover.GetBrowserBackoffRemaining(sc.Name),
+				IsDead:                  isDead,
 			})
 		}
 
@@ -337,7 +353,4 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 	}
 }
 
-func handleIndex(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(indexHTML)
-}
+

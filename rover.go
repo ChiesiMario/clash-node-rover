@@ -28,6 +28,9 @@ type Rover struct {
 	consecutiveFailed int
 	failedConsec      map[string]int
 	backoffRemaining  map[string]int
+
+	browserFailedConsec      map[string]map[string]int
+	browserBackoffRemaining  map[string]map[string]int
 	lastCheckTime     map[string]time.Time
 	lastBandwidthTest map[string]time.Time
 	lastInterviewTime    map[string]time.Time
@@ -59,6 +62,8 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		db:                db,
 		failedConsec:      make(map[string]int),
 		backoffRemaining:  make(map[string]int),
+		browserFailedConsec:     make(map[string]map[string]int),
+		browserBackoffRemaining: make(map[string]map[string]int),
 		lastCheckTime:     make(map[string]time.Time),
 		lastBandwidthTest: make(map[string]time.Time),
 		lastInterviewTime: make(map[string]time.Time),
@@ -200,6 +205,12 @@ func (r *Rover) GetBackoffRemaining(node string) int {
 	r.stateMutex.RLock()
 	defer r.stateMutex.RUnlock()
 	return r.backoffRemaining[node]
+}
+
+func (r *Rover) GetBrowserBackoffRemaining(name string) map[string]int {
+	r.stateMutex.RLock()
+	defer r.stateMutex.RUnlock()
+	return r.browserBackoffRemaining[name]
 }
 
 func (r *Rover) watchConfig() {
@@ -771,19 +782,38 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 				allCachedAndSuccess := true
 				anyCachedFailed := false
+				var failedURL string
+
+				r.stateMutex.Lock()
 				for _, targetURL := range testURLs {
-					if success, exists := urlTestCache[candidate][targetURL]; exists {
-						if !success {
+					if urlMap, ok := r.browserBackoffRemaining[candidate]; ok {
+						if rem := urlMap[targetURL]; rem > 0 {
 							anyCachedFailed = true
+							failedURL = targetURL
 							break
 						}
-					} else {
-						allCachedAndSuccess = false
 					}
+				}
+				r.stateMutex.Unlock()
+
+				if !anyCachedFailed {
+					for _, targetURL := range testURLs {
+						if success, exists := urlTestCache[candidate][targetURL]; exists {
+							if !success {
+								anyCachedFailed = true
+								failedURL = targetURL
+								break
+							}
+						} else {
+							allCachedAndSuccess = false
+						}
+					}
+				} else {
+					allCachedAndSuccess = false
 				}
 
 				if anyCachedFailed {
-					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 驗證失敗：部分服務在快取中已失敗，淘汰並順延: %s", formatNode(candidate)))
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 驗證失敗：部分服務在快取或退避中已失敗 (%s)，淘汰並順延: %s", failedURL, formatNode(candidate)))
 					continue
 				}
 
@@ -870,6 +900,21 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						urlTestCache[candidate][targetURL] = false
 						r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
 						allSuccess = false
+						r.stateMutex.Lock()
+						if r.browserFailedConsec[candidate] == nil {
+							r.browserFailedConsec[candidate] = make(map[string]int)
+						}
+						if r.browserBackoffRemaining[candidate] == nil {
+							r.browserBackoffRemaining[candidate] = make(map[string]int)
+						}
+						r.browserFailedConsec[candidate][targetURL]++
+						fails := r.browserFailedConsec[candidate][targetURL]
+						skipCycles := int(math.Pow(2, float64(fails-1)))
+						if skipCycles > r.GetConfig().MaxBackoffCycles {
+							skipCycles = r.GetConfig().MaxBackoffCycles
+						}
+						r.browserBackoffRemaining[candidate][targetURL] = skipCycles
+						r.stateMutex.Unlock()
 						break 
 					} else {
 						// 檢查是否有被地區阻擋
@@ -894,6 +939,21 @@ func (r *Rover) runCheckCycle(isManual bool) {
 							urlTestCache[candidate][targetURL] = false
 							r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
 							allSuccess = false
+						r.stateMutex.Lock()
+						if r.browserFailedConsec[candidate] == nil {
+							r.browserFailedConsec[candidate] = make(map[string]int)
+						}
+						if r.browserBackoffRemaining[candidate] == nil {
+							r.browserBackoffRemaining[candidate] = make(map[string]int)
+						}
+						r.browserFailedConsec[candidate][targetURL]++
+						fails := r.browserFailedConsec[candidate][targetURL]
+						skipCycles := int(math.Pow(2, float64(fails-1)))
+						if skipCycles > r.GetConfig().MaxBackoffCycles {
+							skipCycles = r.GetConfig().MaxBackoffCycles
+						}
+						r.browserBackoffRemaining[candidate][targetURL] = skipCycles
+						r.stateMutex.Unlock()
 							break
 						}
 
@@ -901,6 +961,14 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						urlTestCache[candidate][targetURL] = true
 						r.db.InsertBrowserLog(candidate, targetURL, true, loadTimeMs)
 						totalLoadTime += loadTimeMs
+						r.stateMutex.Lock()
+						if r.browserFailedConsec[candidate] != nil {
+							r.browserFailedConsec[candidate][targetURL] = 0
+						}
+						if r.browserBackoffRemaining[candidate] != nil {
+							r.browserBackoffRemaining[candidate][targetURL] = 0
+						}
+						r.stateMutex.Unlock()
 					}
 				}
 

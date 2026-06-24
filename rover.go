@@ -762,7 +762,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 					testURLs = append(testURLs, "https://gemini.google.com/app")
 				}
 				if filter.CheckAntigravity {
-					testURLs = append(testURLs, "https://generativelanguage.googleapis.com")
+					testURLs = append(testURLs, "https://generativelanguage.googleapis.com/v1beta/models")
 				}
 
 				if urlTestCache[candidate] == nil {

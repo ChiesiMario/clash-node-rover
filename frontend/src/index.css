@@ -417,15 +417,3 @@
         .log-success .log-msg { color: #6dd58c; }
         .log-warning .log-msg { color: #eaddff; }
         .log-error .log-msg { color: #ffb4ab; }
-.desktop-layout {
-    display: grid;
-    grid-template-columns: 65fr 35fr;
-    gap: 24px;
-    align-items: start;
-}
-
-@media (max-width: 1024px) {
-    .desktop-layout {
-        grid-template-columns: 1fr;
-    }
-}

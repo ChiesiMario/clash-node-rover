@@ -13,7 +13,7 @@ function App() {
         fetchStatus();
     });
 
-    const [activeTab, setActiveTab] = useState('groups');
+    const [activeTab, setActiveTab] = useState('ranking');
     const [isLightTheme, setIsLightTheme] = useState(false);
 
     useEffect(() => {
@@ -48,46 +48,44 @@ function App() {
                 </button>
             </div>
 
-            <div className="desktop-layout">
-                {/* Left Column: Dashboard + Ranking */}
-                <div className="layout-left">
-                    <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
-                    <NodeRanking stats={stats} />
+            <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
+
+            <div className="segmented-button" style={{display: 'inline-flex', marginBottom: '24px'}}>
+                <button id="btn-ranking" className={`seg-btn ${activeTab === 'ranking' ? 'active' : ''}`} onClick={() => setActiveTab('ranking')}>
+                    <span className="material-symbols-outlined" style={{fontSize:'18px'}}>leaderboard</span> 排行榜
+                </button>
+                <button id="btn-groups" className={`seg-btn ${activeTab === 'groups' ? 'active' : ''}`} onClick={() => setActiveTab('groups')}>
+                    <span className="material-symbols-outlined" style={{fontSize:'18px'}}>grid_view</span> 群組監控
+                </button>
+                <button id="btn-logs" className={`seg-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                    <span className="material-symbols-outlined" style={{fontSize:'18px'}}>terminal</span> 系統日誌
+                </button>
+            </div>
+
+            <div id="tab-ranking" className={`tab-content ${activeTab === 'ranking' ? 'active' : ''}`} style={{display: activeTab === 'ranking' ? 'block' : 'none'}}>
+                <NodeRanking stats={stats} />
+            </div>
+
+            <div id="tab-groups" className={`tab-content ${activeTab === 'groups' ? 'active' : ''}`} style={{display: activeTab === 'groups' ? 'block' : 'none'}}>
+                <div className="grid" id="groupsGrid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px'}}>
+                    {groups.map(g => (
+                        <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
+                    ))}
                 </div>
+            </div>
 
-                {/* Right Column: Tabs + Groups/Logs */}
-                <div className="layout-right">
-                    <div className="segmented-button" style={{display: 'flex', width: '100%', marginBottom: '16px'}}>
-                        <button id="btn-groups" style={{flex: 1, justifyContent: 'center'}} className={`seg-btn ${activeTab === 'groups' ? 'active' : ''}`} onClick={() => setActiveTab('groups')}>
-                            <span className="material-symbols-outlined" style={{fontSize:'18px'}}>grid_view</span> 群組監控
-                        </button>
-                        <button id="btn-logs" style={{flex: 1, justifyContent: 'center'}} className={`seg-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-                            <span className="material-symbols-outlined" style={{fontSize:'18px'}}>terminal</span> 系統日誌
-                        </button>
-                    </div>
-
-                    <div id="tab-groups" className={`tab-content ${activeTab === 'groups' ? 'active' : ''}`} style={{display: activeTab === 'groups' ? 'block' : 'none'}}>
-                        <div className="grid" id="groupsGrid" style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-                            {groups.map(g => (
-                                <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
-                            ))}
-                        </div>
-                    </div>
-
-                    <div id="tab-logs" className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`} style={{display: activeTab === 'logs' ? 'block' : 'none'}}>
-                        <div className="card">
-                            <div style={{fontWeight:500, marginBottom:'16px'}}>即時系統日誌</div>
-                            <div className="console-wrapper" style={{maxHeight: '600px'}}>
-                                <div id="terminalBody" className="console" style={{height: '100%', overflowY: 'auto'}}>
-                                    {logs.map((log, i) => (
-                                        <div key={i} className={`log-line log-${log.level === 'success' ? 'success' : log.level === 'warning' ? 'warning' : log.level === 'error' ? 'error' : 'info'}`}>
-                                            <div className="log-time">[{log.time}]</div>
-                                            <div className="log-badge">{log.level === 'success' ? 'OK' : log.level === 'warning' ? 'WARN' : log.level === 'error' ? 'FAIL' : 'INFO'}</div>
-                                            <div className="log-msg">{log.message.replace(/^[💡✅⚠️❌] /, '')}</div>
-                                        </div>
-                                    ))}
+            <div id="tab-logs" className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`} style={{display: activeTab === 'logs' ? 'block' : 'none'}}>
+                <div className="card">
+                    <div style={{fontWeight:500, marginBottom:'16px'}}>即時系統日誌</div>
+                    <div className="console-wrapper" style={{maxHeight: '600px'}}>
+                        <div id="terminalBody" className="console" style={{height: '100%', overflowY: 'auto'}}>
+                            {logs.map((log, i) => (
+                                <div key={i} className={`log-line log-${log.level === 'success' ? 'success' : log.level === 'warning' ? 'warning' : log.level === 'error' ? 'error' : 'info'}`}>
+                                    <div className="log-time">[{log.time}]</div>
+                                    <div className="log-badge">{log.level === 'success' ? 'OK' : log.level === 'warning' ? 'WARN' : log.level === 'error' ? 'FAIL' : 'INFO'}</div>
+                                    <div className="log-msg">{log.message.replace(/^[💡✅⚠️❌] /, '')}</div>
                                 </div>
-                            </div>
+                            ))}
                         </div>
                     </div>
                 </div>

@@ -36,6 +36,8 @@ type Rover struct {
 	IsRunning     atomic.Bool
 	IsPaused      bool
 	pauseMutex    sync.RWMutex
+	lockedGroups  map[string]bool
+	lockedMutex   sync.RWMutex
 }
 
 func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
@@ -51,6 +53,7 @@ func NewRover(cfg *Config, api *APIClient, db *DB) *Rover {
 		ManualTrigger:     make(chan struct{}, 1),
 		Quit:              make(chan struct{}, 1),
 		IsPaused:          false,
+		lockedGroups:      make(map[string]bool),
 	}
 	r.loadState()
 	return r
@@ -74,6 +77,25 @@ func (r *Rover) GetIsPaused() bool {
 	return r.IsPaused
 }
 
+func (r *Rover) IsGroupLocked(groupName string) bool {
+	r.lockedMutex.RLock()
+	defer r.lockedMutex.RUnlock()
+	return r.lockedGroups[groupName]
+}
+
+func (r *Rover) SetGroupLocked(groupName string, locked bool) {
+	r.lockedMutex.Lock()
+	r.lockedGroups[groupName] = locked
+	r.lockedMutex.Unlock()
+	r.saveState()
+	
+	if locked {
+		logWarning("🔒 群組 [%s] 已被鎖定，將暫停自動切換與急救機制", groupName)
+	} else {
+		logSuccess("🔓 群組 [%s] 已解鎖，恢復自動切換", groupName)
+	}
+}
+
 func (r *Rover) loadState() {
 	if bwStr, _ := r.db.GetMetadata("last_bandwidth_test"); bwStr != "" {
 		json.Unmarshal([]byte(bwStr), &r.lastBandwidthTest)
@@ -81,15 +103,28 @@ func (r *Rover) loadState() {
 	if intStr, _ := r.db.GetMetadata("last_interview_time"); intStr != "" {
 		json.Unmarshal([]byte(intStr), &r.lastInterviewTime)
 	}
+	if lockStr, _ := r.db.GetMetadata("locked_groups"); lockStr != "" {
+		json.Unmarshal([]byte(lockStr), &r.lockedGroups)
+	}
 }
 
 func (r *Rover) saveState() {
-	if bwJson, err := json.Marshal(r.lastBandwidthTest); err == nil {
+	r.stateMutex.RLock()
+	bwJson, errBw := json.Marshal(r.lastBandwidthTest)
+	intJson, errInt := json.Marshal(r.lastInterviewTime)
+	r.stateMutex.RUnlock()
+
+	if errBw == nil {
 		r.db.SetMetadata("last_bandwidth_test", string(bwJson))
 	}
-	if intJson, err := json.Marshal(r.lastInterviewTime); err == nil {
+	if errInt == nil {
 		r.db.SetMetadata("last_interview_time", string(intJson))
 	}
+	r.lockedMutex.RLock()
+	if lockJson, err := json.Marshal(r.lockedGroups); err == nil {
+		r.db.SetMetadata("locked_groups", string(lockJson))
+	}
+	r.lockedMutex.RUnlock()
 }
 
 func (r *Rover) GetConfig() *Config {
@@ -576,7 +611,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				if diff <= float64(r.GetConfig().BrowserToleranceMs) {
 					reason = colorSuccess.Sprintf("質量分最高，且預估網頁開啟與最快差距僅 %d ms", int(diff))
 				} else {
-					reason = colorWarning.Sprintf("高分節點預估網頁較慢 (落後 %d ms 超過容忍度)，因此選預估最快節點")
+					reason = colorWarning.Sprintf("高分節點預估網頁較慢 (落後 %d ms 超過容忍度)，因此選預估最快節點", int(diff))
 				}
 			}
 			groupFastestFallbackReason[groupName] = reason
@@ -888,12 +923,16 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 
 		if targetNode != currentNow && currentNow != "" {
-			groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：%s，核准切換！", reason))
-			systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
-			finalSwitches[groupName] = targetNode
-			
-			if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
-				beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
+			if r.IsGroupLocked(groupName) {
+				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🔒 最終決策：%s，但群組已鎖定，維持 %s", reason, formatNode(currentNow)))
+			} else {
+				groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：%s，核准切換！", reason))
+				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
+				finalSwitches[groupName] = targetNode
+				
+				if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
+					beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
+				}
 			}
 		} else {
 			groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 最終決策：%s，維持現有節點 %s", reason, formatNode(currentNow)))
@@ -936,14 +975,14 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			logTreeItem(true, "無狀態更新")
 		} else {
 			for i, line := range lines {
-				logTreeItem(i == len(lines)-1, line)
+				logTreeItem(i == len(lines)-1, "%s", line)
 			}
 		}
 	}
 
 	logGroupTitle("🔧 系統狀態")
 	for i, line := range systemReports {
-		logTreeItem(i == len(systemReports)-1, line)
+		logTreeItem(i == len(systemReports)-1, "%s", line)
 	}
 }
 
@@ -985,7 +1024,7 @@ func (r *Rover) runFailoverWatchdog(ctx context.Context) {
 				if err != nil {
 					consecutiveFails[groupName]++
 					if consecutiveFails[groupName] == 1 {
-						logGroup(groupName, colorWarning.Sprintf("節點 %s 失去回應，進入黃色警戒...", formatNode(activeNode)))
+						logGroup(groupName, "%s", colorWarning.Sprintf("節點 %s 失去回應，進入黃色警戒...", formatNode(activeNode)))
 					}
 
 					if consecutiveFails[groupName] >= r.GetConfig().FailoverMaxFails {
@@ -996,43 +1035,46 @@ func (r *Rover) runFailoverWatchdog(ctx context.Context) {
 							r.db.InsertLog(activeNode, 9999, false)
 						}
 
-						// 找備胎
-						scores, _ := r.db.GetScores(r.GetConfig().HistoryDays)
-						var bestAlt string
-						var highestScore = -999999
+						if r.IsGroupLocked(groupName) {
+							logFailover("🔒 群組 [%s] 已鎖定，略過急救切換機制", groupName)
+						} else {
+							// 找備胎
+							scores, _ := r.db.GetScores(r.GetConfig().HistoryDays)
+							var bestAlt string
+							var highestScore = -999999
 
-						for _, candidate := range group.All {
-							if candidate == activeNode {
-								continue
-							}
-							if sc, ok := scores[candidate]; ok {
-								if sc.Score > highestScore {
-									highestScore = sc.Score
-									bestAlt = candidate
+							for _, candidate := range group.All {
+								if candidate == activeNode {
+									continue
+								}
+								if sc, ok := scores[candidate]; ok {
+									if sc.Score > highestScore {
+										highestScore = sc.Score
+										bestAlt = candidate
+									}
 								}
 							}
-						}
 
-						if bestAlt != "" {
-							r.api.SelectProxy(groupName, bestAlt)
-							logFailover("群組 [%s] 已觸發急救機制！預計切換至: %s", groupName, formatNode(bestAlt))
+							if bestAlt != "" {
+								r.api.SelectProxy(groupName, bestAlt)
+								logFailover("群組 [%s] 已觸發急救機制！預計切換至: %s", groupName, formatNode(bestAlt))
 
-							if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnFailover {
-								beeep.Notify("🚨 Rover 急救成功", fmt.Sprintf("已為您攔截斷線，群組 [%s] 切換至 %s", groupName, bestAlt), "")
+								if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnFailover {
+									beeep.Notify("🚨 Rover 急救成功", fmt.Sprintf("已為您攔截斷線，群組 [%s] 切換至 %s", groupName, bestAlt), "")
+								}
+
+								BroadcastRefresh()
+							} else {
+								logFailover("[%s] 找不到其他可用的備用節點！", groupName)
 							}
-
-							BroadcastRefresh()
-						} else {
-							logFailover("[%s] 找不到其他可用的備用節點！", groupName)
 						}
 
 						// 重置計數
 						consecutiveFails[groupName] = 0
 					}
 				} else {
-					// 成功回應，重置計數
 					if consecutiveFails[groupName] > 0 {
-						logGroup(groupName, colorSuccess.Sprintf("節點 %s 恢復連線，解除黃色警戒。", formatNode(activeNode)))
+						logGroup(groupName, "%s", colorSuccess.Sprintf("節點 %s 恢復連線，解除黃色警戒。", formatNode(activeNode)))
 						consecutiveFails[groupName] = 0
 					}
 				}

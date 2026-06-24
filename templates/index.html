@@ -559,8 +559,15 @@
                 let html = '';
                 data.forEach(g => {
                     let options = g.all_nodes.map(n => '<option value="' + n + '" ' + (n === g.now ? 'selected' : '') + '>' + n + '</option>').join('');
+                    let lockBtnClass = g.locked ? 'btn icon-btn' : 'btn secondary icon-btn';
+                    let lockIcon = g.locked ? 'lock' : 'lock_open';
+                    let lockTitle = g.locked ? '點擊解鎖 (恢復自動切換)' : '點擊鎖定 (停止自動切換)';
+                    
                     html += '<div class="group-card">' +
-                            '<div class="group-header">' + g.name + '</div>' +
+                            '<div class="group-header" style="display:flex; justify-content:space-between; align-items:center;">' + 
+                                '<span>' + g.name + '</span>' +
+                                '<button class="' + lockBtnClass + '" onclick="toggleGroupLock(\'' + g.name + '\', ' + !g.locked + ')" title="' + lockTitle + '" style="width:32px; height:32px;"><span class="material-symbols-outlined" style="font-size:16px">' + lockIcon + '</span></button>' +
+                            '</div>' +
                             '<div class="group-now">' + (g.now || '未選擇') + '</div>' +
                             (g.provider ? '<div class="badge primary" style="align-self: flex-start;"><span class="material-symbols-outlined" style="font-size:14px">corporate_fare</span> ' + g.provider + '</div>' : '') +
                             '<div style="color: var(--md-sys-color-on-surface-variant); font-size:14px; margin-bottom:8px;">運行中 &bull; 共 ' + g.all_count + ' 個節點</div>' +
@@ -581,6 +588,15 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({group: groupName, node: select.value})
+            });
+            fetchGroups();
+        }
+
+        async function toggleGroupLock(groupName, locked) {
+            await fetch('/api/groups/lock', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({group: groupName, locked: locked})
             });
             fetchGroups();
         }

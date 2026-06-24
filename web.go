@@ -74,6 +74,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 			Provider string   `json:"provider"`
 			All      int      `json:"all_count"`
 			AllNodes []string `json:"all_nodes"`
+			Locked   bool     `json:"locked"`
 		}
 		var statuses []GroupStatus
 		for _, gName := range rover.GetConfig().TargetGroups {
@@ -85,11 +86,32 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 					Provider: GetNodeProvider(g.Now),
 					All:      len(g.All),
 					AllNodes: g.All,
+					Locked:   rover.IsGroupLocked(gName),
 				})
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(statuses)
+	})
+
+	http.HandleFunc("/api/groups/lock", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var req struct {
+			Group  string `json:"group"`
+			Locked bool   `json:"locked"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request", http.StatusBadRequest)
+			return
+		}
+		rover.SetGroupLocked(req.Group, req.Locked)
+		BroadcastRefresh()
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
 	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {

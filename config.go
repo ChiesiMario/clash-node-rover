@@ -66,7 +66,7 @@ target_groups:
   - "🤖 Node Rover"
 
 # 專屬的無感測速群組 (Optional，留空則自動借用上述的 target_groups)。
-# 如果設定此群組，Rover 測速時將不再借用你正在上網的群組，達成 100% 無感背景測速。
+# 如果設定此群組，Rover 測速時將不再借用你正在上網的群組，達成 100%% 無感背景測速。
 # (強烈建議：需配合 Clash 設定檔開啟獨立 Port 並將 clash_proxy_url 改為該 Port)
 dedicated_test_group: ""
 

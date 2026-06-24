@@ -399,6 +399,10 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 					br.weightedSuccessSum += weight
 					br.weightedLoadTimeSum += float64(loadTime) * weight
 					br.loadTimeWeightSum += weight
+				} else {
+					// 失敗的測試視為超時 (15000ms)，並強制加入平均載入時間的母體中，防止爛節點因為沒成功紀錄而拿到預設的滿分載入速度
+					br.weightedLoadTimeSum += 15000.0 * weight
+					br.loadTimeWeightSum += weight
 				}
 				if timestamp > br.maxTime {
 					br.maxTime = timestamp
@@ -417,7 +421,10 @@ func (d *DB) GetScores(days int) (map[string]NodeScore, error) {
 				priorLoadTime := 1000.0 // 樂觀載入時間 1000ms
 
 				sc.BrowserSuccessRate = (br.weightedSuccessSum + priorWeight*priorSuccess) / (br.weightSum + priorWeight)
-				successBonus := int(sc.BrowserSuccessRate * 4000)
+				
+				// V4 優化：非線性成功率獎勵 (SuccessRate^2 * 4000)
+				// 讓失敗率稍高的節點分數雪崩式下滑，而不是線性扣分
+				successBonus := int(math.Pow(sc.BrowserSuccessRate, 2) * 4000)
 				sc.Score += successBonus
 
 				totalLoadTimeWeight := br.loadTimeWeightSum + priorWeight

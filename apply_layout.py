@@ -1,4 +1,33 @@
-import { useEffect, useState } from 'react';
+import re
+
+# 1. Update index.css
+with open('frontend/src/index.css', 'r', encoding='utf-8') as f:
+    css = f.read()
+
+desktop_layout_css = """
+.desktop-layout {
+    display: grid;
+    grid-template-columns: 65fr 35fr;
+    gap: 24px;
+    align-items: start;
+}
+
+@media (max-width: 1024px) {
+    .desktop-layout {
+        grid-template-columns: 1fr;
+    }
+}
+"""
+
+if '.desktop-layout' not in css:
+    css += desktop_layout_css
+
+with open('frontend/src/index.css', 'w', encoding='utf-8') as f:
+    f.write(css)
+
+
+# 2. Update App.tsx
+app_tsx_content = """import { useEffect, useState } from 'react';
 import { useApi } from './hooks/useApi';
 import { useWebSocket } from './hooks/useWebSocket';
 import Dashboard from './components/Dashboard';
@@ -97,3 +126,21 @@ function App() {
 }
 
 export default App;
+"""
+
+with open('frontend/src/App.tsx', 'w', encoding='utf-8') as f:
+    f.write(app_tsx_content)
+
+
+# Read task.md and update
+with open(r'C:\Users\Noah\.gemini\antigravity-ide\brain\5c682920-2755-40ef-a795-f50e8cacbd6d\task.md', 'r', encoding='utf-8') as f:
+    task = f.read()
+
+task = task.replace('- `[ ]` 1. Update CSS', '- `[x]` 1. Update CSS')
+task = task.replace('- `[ ]` Add `.desktop-layout` grid styles', '- `[x]` Add `.desktop-layout` grid styles')
+task = task.replace('- `[ ]` 2. Update `App.tsx`', '- `[x]` 2. Update `App.tsx`')
+task = task.replace('- `[ ]` Restructure left column (Dashboard + NodeRanking)', '- `[x]` Restructure left column (Dashboard + NodeRanking)')
+task = task.replace('- `[ ]` Restructure right column (Tabs + GroupCard/Logs)', '- `[x]` Restructure right column (Tabs + GroupCard/Logs)')
+
+with open(r'C:\Users\Noah\.gemini\antigravity-ide\brain\5c682920-2755-40ef-a795-f50e8cacbd6d\task.md', 'w', encoding='utf-8') as f:
+    f.write(task)

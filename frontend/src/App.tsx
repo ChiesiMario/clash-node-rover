@@ -50,28 +50,25 @@ function App() {
 
             <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
 
+            <div style={{marginBottom: '24px'}}>
+                <div className="grid" id="groupsGrid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px'}}>
+                    {groups.map(g => (
+                        <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
+                    ))}
+                </div>
+            </div>
+
             <div className="segmented-button" style={{display: 'inline-flex', marginBottom: '24px'}}>
                 <button id="btn-ranking" className={`seg-btn ${activeTab === 'ranking' ? 'active' : ''}`} onClick={() => setActiveTab('ranking')}>
                     <span className="material-symbols-outlined" style={{fontSize:'18px'}}>leaderboard</span> 排行榜
                 </button>
-                <button id="btn-groups" className={`seg-btn ${activeTab === 'groups' ? 'active' : ''}`} onClick={() => setActiveTab('groups')}>
-                    <span className="material-symbols-outlined" style={{fontSize:'18px'}}>grid_view</span> 群組監控
-                </button>
-                <button id="btn-logs" className={`seg-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                                <button id="btn-logs" className={`seg-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
                     <span className="material-symbols-outlined" style={{fontSize:'18px'}}>terminal</span> 系統日誌
                 </button>
             </div>
 
             <div id="tab-ranking" className={`tab-content ${activeTab === 'ranking' ? 'active' : ''}`} style={{display: activeTab === 'ranking' ? 'block' : 'none'}}>
                 <NodeRanking stats={stats} />
-            </div>
-
-            <div id="tab-groups" className={`tab-content ${activeTab === 'groups' ? 'active' : ''}`} style={{display: activeTab === 'groups' ? 'block' : 'none'}}>
-                <div className="grid" id="groupsGrid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px'}}>
-                    {groups.map(g => (
-                        <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
-                    ))}
-                </div>
             </div>
 
             <div id="tab-logs" className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`} style={{display: activeTab === 'logs' ? 'block' : 'none'}}>

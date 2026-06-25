@@ -88,5 +88,15 @@ export function useApi() {
         });
     };
 
-    return { stats, status, groups, fetchStats, fetchStatus, fetchGroups, triggerTest, togglePause, manualSwitch, toggleGroupLock, saveFilter };
+    const fetchNodeHistory = async (nodeName: string) => {
+        try {
+            const res = await fetch('/api/history?node=' + encodeURIComponent(nodeName));
+            return await res.json();
+        } catch (e) {
+            console.error('Failed to fetch node history', e);
+            return { ping: [], browser: [] };
+        }
+    };
+
+    return { stats, status, groups, fetchStats, fetchStatus, fetchGroups, triggerTest, togglePause, manualSwitch, toggleGroupLock, saveFilter, fetchNodeHistory };
 }

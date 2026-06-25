@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import os
+
+content = """import React, { useState, useEffect } from 'react';
 import { useApi } from '../hooks/useApi';
 import {
   LineChart,
@@ -187,3 +189,7 @@ export default function NodeRanking({ stats }: any) {
         </div>
     );
 }
+"""
+
+with open("frontend/src/components/NodeRanking.tsx", "w", encoding="utf-8") as f:
+    f.write(content)

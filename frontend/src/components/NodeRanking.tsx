@@ -23,20 +23,25 @@ export default function NodeRanking({ stats }: any) {
                 </thead>
                 <tbody>
                     {stats.map((s: any, idx: number) => {
-                        const scoreStr = s.score.toFixed(2);
+                        const isDead = s.is_dead || false;
+                        const scoreStr = isDead ? "失敗" : s.Score;
                         return (
-                            <tr key={s.node_name} className="node-row">
+                            <tr key={s.Name} className="node-row">
                                 <td style={{textAlign: 'center', fontWeight: '600', color: idx < 3 ? 'var(--md-sys-color-primary)' : 'inherit'}}>
                                     {idx === 0 ? '🏆 1' : idx === 1 ? '🥈 2' : idx === 2 ? '🥉 3' : idx + 1}
                                 </td>
-                                <td style={{fontWeight: '500'}}>{s.node_name}</td>
-                                <td style={{textAlign: 'center'}}><div className="score-box">{scoreStr}</div></td>
-                                <td style={{textAlign: 'center'}}>{s.avg_delay > 0 ? `${s.avg_delay} ms` : '-'}</td>
-                                <td style={{textAlign: 'center'}}>{s.jitter > 0 ? `${s.jitter} ms` : '-'}</td>
+                                <td style={{fontWeight: '500', color: isDead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{s.Name}</td>
+                                <td style={{textAlign: 'center'}}>
+                                    <div className="score-box" style={isDead ? {background:'var(--md-sys-color-error-container)', color:'var(--md-sys-color-on-error-container)'} : {}}>
+                                        {scoreStr}
+                                    </div>
+                                </td>
+                                <td style={{textAlign: 'center', color: isDead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{!isDead ? `${s.AvgDelay} ms` : '-'}</td>
+                                <td style={{textAlign: 'center', color: isDead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{!isDead ? `${s.Jitter} ms` : '-'}</td>
                                 <td>
-                                    {s.in_groups && s.in_groups.length > 0 ? (
+                                    {s.highest_in_groups && s.highest_in_groups.length > 0 ? (
                                         <div style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
-                                            {s.in_groups.map((g: string) => <span key={g} className="badge primary">{g}</span>)}
+                                            {s.highest_in_groups.map((g: string) => <span key={g} className="badge primary">{g}</span>)}
                                         </div>
                                     ) : (
                                         <span style={{color: 'var(--md-sys-color-outline)'}}>未被選用</span>

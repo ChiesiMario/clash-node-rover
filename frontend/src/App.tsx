@@ -35,60 +35,72 @@ function App() {
     };
 
     return (
-        <>
-            <div className="top-app-bar" style={{marginBottom: '24px', boxShadow: 'var(--md-sys-elevation-1)'}}>
-                <div className="app-title md3-title-large">
-                    <span className="material-symbols-outlined" style={{color: "var(--md-sys-color-primary)", fontSize: "28px"}}>rocket_launch</span>
-                    Clash Node Rover
+        <div className="app-layout">
+            {/* MD3 Navigation Rail */}
+            <nav className="nav-rail">
+                <div className="nav-rail-top">
+                    <div className="brand-icon">
+                        <span className="material-symbols-outlined" style={{fontSize: '32px'}}>rocket_launch</span>
+                    </div>
                 </div>
-                <button className="icon-btn" onClick={toggleTheme} title="切換深色/淺色主題">
-                    <span className="material-symbols-outlined" id="themeIcon">
-                        {isLightTheme ? 'dark_mode' : 'light_mode'}
-                    </span>
+                
+                <button className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
+                    <div className="icon-container">
+                        <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : "'FILL' 0"}}>home</span>
+                    </div>
+                    <span className="nav-label">首頁</span>
                 </button>
-            </div>
+                
+                <button className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                    <div className="icon-container">
+                        <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'logs' ? "'FILL' 1" : "'FILL' 0"}}>terminal</span>
+                    </div>
+                    <span className="nav-label">日誌</span>
+                </button>
 
-            <div className="container">
+                <div className="nav-rail-spacer"></div>
+
+                <button className="nav-item" onClick={toggleTheme}>
+                    <div className="icon-container">
+                        <span className="material-symbols-outlined">{isLightTheme ? 'dark_mode' : 'light_mode'}</span>
+                    </div>
+                    <span className="nav-label">主題</span>
+                </button>
+            </nav>
+
+            <main className="main-content">
+                {/* Hero Section - Always visible */}
                 <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
 
-                <div className="segmented-button" style={{display: 'inline-flex', marginBottom: '24px'}}>
-                    <button id="btn-home" className={`seg-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
-                        <span className="material-symbols-outlined" style={{fontSize:'18px'}}>home</span> 首頁
-                    </button>
-                    <button id="btn-logs" className={`seg-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-                        <span className="material-symbols-outlined" style={{fontSize:'18px'}}>terminal</span> 系統日誌
-                    </button>
-                </div>
-
-                <div id="tab-home" className={`tab-content ${activeTab === 'home' ? 'active' : ''}`} style={{display: activeTab === 'home' ? 'block' : 'none'}}>
-                    <div style={{marginBottom: '24px'}}>
-                        <div className="grid" id="groupsGrid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px'}}>
-                            {groups.map(g => (
-                                <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
-                            ))}
-                        </div>
+                {/* Tabs Content */}
+                <div className={`tab-content ${activeTab === 'home' ? 'active' : ''}`}>
+                    <div className="md3-headline-large" style={{marginBottom: '24px'}}>節點群組管理</div>
+                    <div className="grid-groups">
+                        {groups.map(g => (
+                            <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
+                        ))}
                     </div>
+                    
+                    <div className="md3-headline-large" style={{marginBottom: '24px', marginTop: '48px'}}>節點即時排行榜</div>
                     <NodeRanking stats={stats} />
                 </div>
 
-                <div id="tab-logs" className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`} style={{display: activeTab === 'logs' ? 'block' : 'none'}}>
-                    <div className="card">
-                        <div className="md3-title-medium" style={{marginBottom:'16px'}}>即時系統日誌</div>
-                        <div className="console-wrapper" style={{maxHeight: '600px'}}>
-                            <div id="terminalBody" className="console" style={{height: '100%', overflowY: 'auto'}}>
-                                {logs.map((log, i) => (
-                                    <div key={i} className={`log-line log-${log.level === 'success' ? 'success' : log.level === 'warning' ? 'warning' : log.level === 'error' ? 'error' : 'info'}`}>
-                                        <div className="log-time">[{log.time}]</div>
-                                        <div className="log-badge">{log.level === 'success' ? 'OK' : log.level === 'warning' ? 'WARN' : log.level === 'error' ? 'FAIL' : 'INFO'}</div>
-                                        <div className="log-msg">{log.message.replace(/^[💡✅⚠️❌] /, '')}</div>
-                                    </div>
-                                ))}
-                            </div>
+                <div className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`}>
+                    <div className="md3-headline-large" style={{marginBottom: '24px'}}>系統日誌</div>
+                    <div className="card" style={{padding: '0', border: 'none'}}>
+                        <div className="console">
+                            {logs.map((log, i) => (
+                                <div key={i} className={`log-line log-${log.level === 'success' ? 'success' : log.level === 'warning' ? 'warning' : log.level === 'error' ? 'error' : 'info'}`}>
+                                    <div className="log-time">[{log.time}]</div>
+                                    <div className="log-badge">{log.level === 'success' ? 'OK' : log.level === 'warning' ? 'WARN' : log.level === 'error' ? 'FAIL' : 'INFO'}</div>
+                                    <div className="log-msg">{log.message.replace(/^[💡✅⚠️❌] /, '')}</div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>
-            </div>
-        </>
+            </main>
+        </div>
     );
 }
 

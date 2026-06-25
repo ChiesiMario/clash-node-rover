@@ -2,26 +2,33 @@ import type { Status } from '../hooks/useApi';
 
 export default function Dashboard({ status, triggerTest, togglePause }: { status: Status, triggerTest: () => void, togglePause: () => void }) {
     return (
-        <div className="card" style={{marginBottom: '24px'}}>
-            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'16px'}}>
+        <div className="hero-card">
+            <div className="hero-card-content">
                 <div>
-                    <div className="md3-title-large" style={{marginBottom:'8px'}}>
-                        Brain 核心引擎 <span className="md3-label-medium" style={{padding:'4px 8px', borderRadius:'12px', backgroundColor: status.is_paused ? 'var(--md-sys-color-warning-container)' : 'var(--md-sys-color-success-container)', color: status.is_paused ? 'var(--md-sys-color-on-warning-container)' : 'var(--md-sys-color-on-success-container)', verticalAlign:'middle', marginLeft:'8px'}}>
-                            {status.is_paused ? '已暫停' : '運作中'}
+                    <div className="md3-headline-large" style={{marginBottom:'12px'}}>
+                        Clash Node Rover 核心
+                    </div>
+                    <div style={{display: 'flex', gap: '16px', alignItems: 'center'}}>
+                        <span className={`hero-badge ${status.is_paused ? 'paused' : 'running'}`}>
+                            <span className="material-symbols-outlined" style={{fontSize: '18px'}}>{status.is_paused ? 'pause_circle' : 'check_circle'}</span>
+                            {status.is_paused ? '引擎已暫停' : '引擎運作中'}
+                        </span>
+                        <span className="md3-body-medium" style={{color: 'var(--md-sys-color-on-surface-variant)'}}>
+                            自動測速週期：5 分鐘
                         </span>
                     </div>
-                    <div className="md3-body-medium" style={{color:'var(--md-sys-color-on-surface-variant)'}}>自動測速週期：5 分鐘</div>
                 </div>
-                <div style={{display:'flex', gap:'12px'}}>
-                    <button id="triggerBtn" className="btn" onClick={triggerTest} disabled={status.is_running}>
-                        <span className={`material-symbols-outlined ${status.is_running ? 'spin' : ''}`} id="triggerIcon">
+                
+                <div style={{display:'flex', gap:'16px'}}>
+                    <button className="btn" onClick={triggerTest} disabled={status.is_running}>
+                        <span className={`material-symbols-outlined ${status.is_running ? 'spin' : ''}`}>
                             {status.is_running ? 'refresh' : 'speed'}
                         </span>
-                        <span id="triggerText">{status.is_running ? 'Testing...' : 'Run Test'}</span>
+                        {status.is_running ? '測速中...' : '立即測速'}
                     </button>
-                    <button id="pauseBtn" className={`btn ${status.is_paused ? '' : 'secondary'}`} onClick={togglePause}>
+                    <button className={`btn ${status.is_paused ? 'primary' : 'tonal'}`} onClick={togglePause}>
                         <span className="material-symbols-outlined">{status.is_paused ? 'play_arrow' : 'pause'}</span>
-                        {status.is_paused ? 'Resume Brain' : 'Pause Brain'}
+                        {status.is_paused ? '恢復運作' : '暫停核心'}
                     </button>
                 </div>
             </div>

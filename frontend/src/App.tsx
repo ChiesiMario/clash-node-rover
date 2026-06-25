@@ -43,12 +43,12 @@ function App() {
                     <div className="brand-icon" style={{background: 'transparent', boxShadow: 'none'}}>
                         <img src={logo} alt="Rover Logo" style={{width: '32px', height: '32px', borderRadius: '8px'}} />
                     </div>
-                    <div className="hig-headline">節點巡測</div>
+                    <div className="hig-headline">Clash Node Rover</div>
                 </div>
                 
                 <button className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
                     <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : "'FILL' 0"}}>home</span>
-                    <span className="hig-body">系統總覽</span>
+                    <span className="hig-body">總覽</span>
                 </button>
                 
                 <button className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
@@ -60,7 +60,7 @@ function App() {
 
                 <button className="nav-item" onClick={toggleTheme}>
                     <span className="material-symbols-outlined">{isLightTheme ? 'dark_mode' : 'light_mode'}</span>
-                    <span className="hig-body">外觀設定</span>
+                    <span className="hig-body">外觀切換</span>
                 </button>
             </aside>
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useApi } from './hooks/useApi';
 import { useWebSocket } from './hooks/useWebSocket';
 import Dashboard from './components/Dashboard';
@@ -15,37 +15,17 @@ function App() {
 
     const [activeTab, setActiveTab] = useState('home');
     const [isLightTheme, setIsLightTheme] = useState(false);
-    
-    // Theme Color Picker
-    const [themeColor, setThemeColor] = useState('blue');
-    const [showPalette, setShowPalette] = useState(false);
-    const popupRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         fetchGroups();
         fetchStats();
         fetchStatus();
         
-        // Load initial theme mode
         const savedThemeMode = localStorage.getItem('themeMode');
         if (savedThemeMode === 'light') {
             setIsLightTheme(true);
             document.documentElement.classList.add('light-theme');
         }
-        
-        // Load initial theme color
-        const savedThemeColor = localStorage.getItem('themeColor') || 'blue';
-        setThemeColor(savedThemeColor);
-        applyThemeColor(savedThemeColor);
-
-        // Click outside to close popup
-        const handleClickOutside = (event: MouseEvent) => {
-            if (popupRef.current && !popupRef.current.contains(event.target as Node)) {
-                setShowPalette(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
     const toggleTheme = () => {
@@ -55,101 +35,52 @@ function App() {
         localStorage.setItem('themeMode', newThemeMode ? 'light' : 'dark');
     };
 
-    const applyThemeColor = (color: string) => {
-        document.documentElement.classList.remove('theme-blue', 'theme-green', 'theme-purple', 'theme-rose');
-        document.documentElement.classList.add(`theme-${color}`);
-    };
-
-    const handleColorSelect = (color: string) => {
-        setThemeColor(color);
-        applyThemeColor(color);
-        localStorage.setItem('themeColor', color);
-        setShowPalette(false);
-    };
-
-    const COLORS = [
-        { id: 'blue', name: '預設藍', cls: 'dot-blue' },
-        { id: 'green', name: '薄荷綠', cls: 'dot-green' },
-        { id: 'purple', name: '丁香紫', cls: 'dot-purple' },
-        { id: 'rose', name: '玫瑰紅', cls: 'dot-rose' }
-    ];
-
     return (
         <div className="app-layout">
-            {/* MD3 Navigation Rail */}
-            <nav className="nav-rail">
-                <div className="nav-rail-top">
+            <aside className="sidebar">
+                <div className="sidebar-header">
                     <div className="brand-icon">
-                        <span className="material-symbols-outlined" style={{fontSize: '32px'}}>rocket_launch</span>
+                        <span className="material-symbols-outlined" style={{fontSize: '20px'}}>rocket_launch</span>
                     </div>
+                    <div className="hig-headline">Node Rover</div>
                 </div>
                 
                 <button className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
-                    <div className="icon-container">
-                        <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : "'FILL' 0"}}>home</span>
-                    </div>
-                    <span className="nav-label">首頁</span>
+                    <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : "'FILL' 0"}}>home</span>
+                    <span className="hig-body">Dashboard</span>
                 </button>
                 
                 <button className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-                    <div className="icon-container">
-                        <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'logs' ? "'FILL' 1" : "'FILL' 0"}}>terminal</span>
-                    </div>
-                    <span className="nav-label">日誌</span>
+                    <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'logs' ? "'FILL' 1" : "'FILL' 0"}}>terminal</span>
+                    <span className="hig-body">Logs</span>
                 </button>
 
-                <div className="nav-rail-spacer"></div>
+                <div className="sidebar-spacer"></div>
 
-                {/* Palette Picker */}
-                <div className="palette-popup-container" ref={popupRef}>
-                    <button className={`nav-item ${showPalette ? 'active' : ''}`} onClick={() => setShowPalette(!showPalette)}>
-                        <div className="icon-container">
-                            <span className="material-symbols-outlined" style={{fontVariationSettings: showPalette ? "'FILL' 1" : "'FILL' 0"}}>palette</span>
-                        </div>
-                        <span className="nav-label">色彩</span>
-                    </button>
-                    {showPalette && (
-                        <div className="palette-popup">
-                            <div className="md3-label-large" style={{color: 'var(--md-sys-color-on-surface-variant)', padding: '0 8px', marginBottom: '4px'}}>主題色彩</div>
-                            {COLORS.map(c => (
-                                <div key={c.id} className={`color-option ${themeColor === c.id ? 'active' : ''}`} onClick={() => handleColorSelect(c.id)}>
-                                    <div className={`color-dot ${c.cls}`}></div>
-                                    <span>{c.name}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* Dark/Light Mode */}
                 <button className="nav-item" onClick={toggleTheme}>
-                    <div className="icon-container">
-                        <span className="material-symbols-outlined">{isLightTheme ? 'dark_mode' : 'light_mode'}</span>
-                    </div>
-                    <span className="nav-label">外觀</span>
+                    <span className="material-symbols-outlined">{isLightTheme ? 'dark_mode' : 'light_mode'}</span>
+                    <span className="hig-body">Appearance</span>
                 </button>
-            </nav>
+            </aside>
 
             <main className="main-content">
-                {/* Hero Section - Always visible */}
                 <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
 
-                {/* Tabs Content */}
                 <div className={`tab-content ${activeTab === 'home' ? 'active' : ''}`}>
-                    <div className="md3-headline-large" style={{marginBottom: '24px'}}>節點群組管理</div>
+                    <div className="hig-title-2" style={{marginBottom: '24px'}}>Groups</div>
                     <div className="grid-groups">
                         {groups.map(g => (
                             <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
                         ))}
                     </div>
                     
-                    <div className="md3-headline-large" style={{marginBottom: '24px', marginTop: '48px'}}>節點即時排行榜</div>
+                    <div className="hig-title-2" style={{marginBottom: '24px', marginTop: '48px'}}>Node Rankings</div>
                     <NodeRanking stats={stats} />
                 </div>
 
                 <div className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`}>
-                    <div className="md3-headline-large" style={{marginBottom: '24px'}}>系統日誌</div>
-                    <div className="card" style={{padding: '0', border: 'none'}}>
+                    <div className="hig-title-2" style={{marginBottom: '24px'}}>System Logs</div>
+                    <div className="hig-card" style={{padding: '0', border: 'none'}}>
                         <div className="console">
                             {logs.map((log, i) => (
                                 <div key={i} className={`log-line log-${log.level === 'success' ? 'success' : log.level === 'warning' ? 'warning' : log.level === 'error' ? 'error' : 'info'}`}>

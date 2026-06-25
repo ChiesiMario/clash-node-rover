@@ -70,13 +70,6 @@ function App() {
                 <NodeRanking stats={stats} />
             </div>
 
-            
-
-            <div id="tab-home" className={`tab-content ${activeTab === 'home' ? 'active' : ''}`} style={{display: activeTab === 'home' ? 'block' : 'none'}}>
-                
-                <NodeRanking stats={stats} />
-            </div>
-
             <div id="tab-logs" className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`} style={{display: activeTab === 'logs' ? 'block' : 'none'}}>
                 <div className="card">
                     <div style={{fontWeight:500, marginBottom:'16px'}}>即時系統日誌</div>

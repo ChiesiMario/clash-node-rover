@@ -72,6 +72,60 @@ func (c *APIClient) GetProxyGroup(name string) (*ProxyGroup, error) {
 	return &group, nil
 }
 
+func (c *APIClient) GetSelectors() ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/proxies", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var data ProxiesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	var selectors []string
+	for _, proxy := range data.Proxies {
+		if proxy.Type == "Selector" {
+			selectors = append(selectors, proxy.Name)
+		}
+	}
+	return selectors, nil
+}
+
+func (c *APIClient) VerifyConnection() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/version", nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 type DelayResponse struct {
 	Delay int    `json:"delay"`
 	Error string `json:"error"`

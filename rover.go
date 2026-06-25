@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
-	"github.com/gen2brain/beeep"
 )
 
 type Rover struct {
@@ -42,6 +41,7 @@ type Rover struct {
 	ManualTrigger chan struct{}
 	Quit            chan struct{}
 	IsRunning       atomic.Bool
+	ApiConnected    atomic.Bool
 	activeBorrowing atomic.Bool
 	IsPaused        bool
 	pauseMutex      sync.RWMutex
@@ -242,9 +242,11 @@ func (r *Rover) watchConfig() {
 			if err == nil {
 				r.cfgMutex.Lock()
 				r.cfg = newCfg
+				r.api = NewAPIClient(newCfg.APIUrl, newCfg.APISecret)
 				r.cfgMutex.Unlock()
 				r.checkBrowserTestURLsChanged()
-				logInfo("🔄 偵測到設定檔變更，已自動重新載入")
+				r.ForceCheck()
+				logInfo("🔄 偵測到設定檔變更，已自動重新載入並觸發狀態更新")
 			} else {
 				logError("載入新設定檔失敗: %v", err)
 			}
@@ -271,11 +273,18 @@ func (r *Rover) checkBrowserTestURLsChanged() {
 }
 
 func (r *Rover) checkClashStatus() bool {
+	wasConnected := r.ApiConnected.Load()
+	defer func() {
+		if wasConnected != r.ApiConnected.Load() {
+			BroadcastRefresh()
+		}
+	}()
 
 	for _, groupName := range r.GetConfig().TargetGroups {
 		_, err := r.api.GetProxyGroup(groupName)
 		if err != nil {
 			logWarning("群組 [%s] 不存在或查詢失敗: %v", groupName, err)
+			r.ApiConnected.Store(false)
 			return false
 		}
 	}
@@ -283,11 +292,13 @@ func (r *Rover) checkClashStatus() bool {
 	if r.GetConfig().DedicatedTestGroup != "" {
 		_, err := r.api.GetProxyGroup(r.GetConfig().DedicatedTestGroup)
 		if err != nil {
-			logWarning("獨立測速群組 [%s] 不存在或查詢失敗: %v", r.GetConfig().DedicatedTestGroup, err)
+			logWarning("專屬測速群組 [%s] 不存在或查詢失敗: %v", r.GetConfig().DedicatedTestGroup, err)
+			r.ApiConnected.Store(false)
 			return false
 		}
 	}
 
+	r.ApiConnected.Store(true)
 	return true
 }
 
@@ -312,13 +323,30 @@ func (r *Rover) Start() {
 	defer cleanupTicker.Stop()
 
 	for {
+		// Configuration wait loop
+		for r.GetConfig().APIUrl == "" {
+			logWarning("尚無 Clash API 設定，請透過 Web UI 進行設定。")
+			select {
+			case <-r.Quit:
+				logWarning("背景測速引擎已停止。")
+				return
+			case <-time.After(10 * time.Second):
+			}
+		}
+
 		// 外層迴圈: 檢查先決條件 (Recovery Loop)
 		for !r.checkClashStatus() {
+			if r.GetConfig().APIUrl == "" {
+				break
+			}
 			logWarning("偵測到 Clash API 異常或群組設定錯誤，進入 60 秒等待退避模式...")
 			select {
 			case <-r.Quit:
 				logWarning("背景測速引擎已停止。")
 				return
+			case <-r.ManualTrigger:
+				logInfo("收到設定更新或手動觸發信號，立刻中斷退避重試連線...")
+				continue
 			case <-time.After(60 * time.Second):
 				// retry
 			}
@@ -984,10 +1012,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：切換至 %s (%s)", formatNode(targetNode), targetReason))
 				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
 				finalSwitches[groupName] = targetNode
-				
-				if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
-					beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
-				}
 			} else {
 				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 最終決策：維持現有節點 %s (%s)", formatNode(currentNow), targetReason))
 			}

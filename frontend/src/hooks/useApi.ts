@@ -15,6 +15,8 @@ export interface NodeStat {
 export interface Status {
     is_running: boolean;
     is_paused: boolean;
+    is_configured?: boolean;
+    api_connected?: boolean;
 }
 
 export function useApi() {

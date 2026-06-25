@@ -4,23 +4,43 @@ import { useWebSocket } from './hooks/useWebSocket';
 import Dashboard from './components/Dashboard';
 import GroupCard from './components/GroupCard';
 import NodeRanking from './components/NodeRanking';
+import SetupModal from './components/SetupModal';
+import SettingsPage from './components/SettingsPage';
 import logo from './assets/logo.png';
 
 function App() {
     const { stats, status, groups, fetchStats, fetchStatus, fetchGroups, triggerTest, togglePause, manualSwitch, toggleGroupLock, saveFilter } = useApi();
+    const [activeTab, setActiveTab] = useState('home');
+    const [isLightTheme, setIsLightTheme] = useState(false);
+    const [setupState, setSetupState] = useState<{ isConfigured: boolean; apiUrl: string } | null>(null);
+    const [showSetupModal, setShowSetupModal] = useState(false);
+
+    const fetchSetupStatus = async () => {
+        try {
+            const res = await fetch('/api/setup');
+            if (res.ok) {
+                const data = await res.json();
+                setSetupState({ isConfigured: data.is_configured, apiUrl: data.api_url });
+                if (data.is_configured) {
+                    fetchGroups();
+                    fetchStats();
+                    fetchStatus();
+                }
+            }
+        } catch (err) {
+            console.error('Failed to fetch setup status', err);
+        }
+    };
+
     const { logs } = useWebSocket(() => {
         fetchGroups();
         fetchStats();
         fetchStatus();
+        fetchSetupStatus();
     });
 
-    const [activeTab, setActiveTab] = useState('home');
-    const [isLightTheme, setIsLightTheme] = useState(false);
-
     useEffect(() => {
-        fetchGroups();
-        fetchStats();
-        fetchStatus();
+        fetchSetupStatus();
         
         const savedThemeMode = localStorage.getItem('themeMode');
         if (savedThemeMode === 'light') {
@@ -37,7 +57,19 @@ function App() {
     };
 
     return (
-        <div className="app-layout">
+        <>
+        {setupState && (!setupState.isConfigured || showSetupModal) && (
+            <SetupModal 
+                defaultUrl={setupState.apiUrl} 
+                canCancel={setupState.isConfigured}
+                onCancel={() => setShowSetupModal(false)}
+                onSuccess={() => {
+                    setShowSetupModal(false);
+                    fetchSetupStatus();
+                }} 
+            />
+        )}
+        <div className="app-layout" style={{ filter: (setupState && !setupState.isConfigured) ? 'blur(4px)' : 'none', pointerEvents: (setupState && !setupState.isConfigured) ? 'none' : 'auto' }}>
             <aside className="sidebar">
                 <div className="sidebar-header">
                     <div className="brand-icon" style={{background: 'transparent', boxShadow: 'none'}}>
@@ -56,6 +88,11 @@ function App() {
                     <span className="hig-body">系統日誌</span>
                 </button>
 
+                <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+                    <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'settings' ? "'FILL' 1" : "'FILL' 0"}}>settings</span>
+                    <span className="hig-body">設定</span>
+                </button>
+
                 <div className="sidebar-spacer"></div>
 
                 <button className="nav-item" onClick={toggleTheme}>
@@ -65,15 +102,23 @@ function App() {
             </aside>
 
             <main className="main-content">
-                <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
+                <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} apiUrl={setupState?.apiUrl} />
 
                 <div className={`tab-content ${activeTab === 'home' ? 'active' : ''}`}>
                     <div className="hig-title-2" style={{marginBottom: '24px'}}>節點群組管理</div>
-                    <div className="grid-groups">
-                        {groups.map(g => (
-                            <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
-                        ))}
-                    </div>
+                    {groups.length === 0 ? (
+                        <div className="hig-card" style={{textAlign:'center', padding:'60px 20px', color:'var(--hig-text-secondary)'}}>
+                            <span className="material-symbols-outlined" style={{fontSize:'48px', marginBottom:'16px', opacity: 0.5}}>folder_open</span>
+                            <div className="hig-headline">尚無監控的節點群組</div>
+                            <div className="hig-body" style={{marginTop:'8px', opacity: 0.8}}>請先前往「系統設定」加入需要監控的目標群組</div>
+                        </div>
+                    ) : (
+                        <div className="grid-groups">
+                            {groups.map(g => (
+                                <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
+                            ))}
+                        </div>
+                    )}
                     
                     <div className="hig-title-2" style={{marginBottom: '24px', marginTop: '48px'}}>節點即時排行榜</div>
                     <NodeRanking stats={stats} />
@@ -93,8 +138,19 @@ function App() {
                         </div>
                     </div>
                 </div>
+
+                <div className={`tab-content ${activeTab === 'settings' ? 'active' : ''}`}>
+                    <SettingsPage 
+                        apiConnected={status.api_connected} 
+                        onSaveSuccess={() => {
+                            fetchStatus();
+                            fetchSetupStatus();
+                        }} 
+                    />
+                </div>
             </main>
         </div>
+        </>
     );
 }
 

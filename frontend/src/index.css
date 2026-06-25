@@ -94,6 +94,8 @@ body {
 /* ====== SIDEBAR (macOS Style) ====== */
 .sidebar {
     width: 200px;
+    min-width: 200px;
+    flex-shrink: 0;
     background-color: var(--hig-glass-bg);
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);
@@ -196,8 +198,13 @@ body {
     gap: 8px;
     transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
-.btn:hover { background-color: var(--hig-system-blue-active); }
-.btn:active { transform: scale(0.96); opacity: 0.8; }
+.btn:hover:not(:disabled) { background-color: var(--hig-system-blue-active); }
+.btn:active:not(:disabled) { transform: scale(0.96); opacity: 0.8; }
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: grayscale(100%);
+}
 
 .btn.secondary {
     background-color: var(--hig-fill-primary);
@@ -350,3 +357,96 @@ tr:hover { background-color: var(--hig-fill-secondary); }
 @keyframes fadeIn { from { opacity: 0; transform: scale(0.98); } to { opacity: 1; transform: scale(1); } }
 .spin { animation: spin 2s linear infinite; }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+
+.status-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: inline-block;
+    animation: pulse-dot 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+@keyframes pulse-dot {
+    0% { transform: scale(0.95); box-shadow: 0 0 0 0 var(--dot-shadow, rgba(0, 0, 0, 0.4)); }
+    70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(0, 0, 0, 0); }
+    100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+
+.setup-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.setup-modal-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    width: 400px;
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.2);
+    color: var(--text-primary);
+}
+.setup-header h2 {
+    margin-top: 0;
+    margin-bottom: 8px;
+    font-size: 24px;
+}
+.setup-header p {
+    color: var(--text-secondary);
+    font-size: 14px;
+    margin-bottom: 24px;
+}
+.setup-form .form-group {
+    margin-bottom: 16px;
+}
+.setup-form label {
+    display: block;
+    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 500;
+}
+.setup-form input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-size: 14px;
+    box-sizing: border-box;
+}
+.setup-form input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+.setup-error {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+.setup-form .btn-primary {
+    width: 100%;
+    padding: 12px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+.setup-form .btn-primary:hover {
+    background: #2563eb;
+}
+.setup-form .btn-primary:disabled {
+    background: var(--border);
+    cursor: not-allowed;
+}

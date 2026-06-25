@@ -1,45 +1,37 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
-	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type NotificationConfig struct {
-	Enable             bool `yaml:"enable"`
+	Enable             bool `yaml:"enable" json:"enable"`
 	
-	NotifyOnBetterNode bool `yaml:"notify_on_better_node"`
+	NotifyOnBetterNode bool `yaml:"notify_on_better_node" json:"notify_on_better_node"`
 }
 
 type Config struct {
-	APIUrl                string        `yaml:"api_url"`
-	APISecret             string        `yaml:"api_secret"`
-	CheckInterval         time.Duration `yaml:"check_interval"`
-	TargetGroups          []string      `yaml:"target_groups"`
-	DedicatedTestGroup    string        `yaml:"dedicated_test_group"`
-	TestURLs              []string      `yaml:"test_urls"`
-	TestTimeout           time.Duration `yaml:"test_timeout"`
-	ToleranceMs           int           `yaml:"tolerance_ms"`         // milliseconds
-	CleanupDays           int           `yaml:"cleanup_days"`         // days
-	MaxConcurrent         int           `yaml:"max_concurrent"`
-	WebPort               int           `yaml:"web_port"`
-	ClashProxyURL         string        `yaml:"clash_proxy_url"`
-	MaxBackoffCycles      int           `yaml:"max_backoff_cycles"`
+	APIUrl                string        `yaml:"api_url" json:"api_url"`
+	APISecret             string        `yaml:"api_secret" json:"api_secret"`
+	CheckInterval         time.Duration `yaml:"check_interval" json:"check_interval"`
+	TargetGroups          []string      `yaml:"target_groups" json:"target_groups"`
+	DedicatedTestGroup    string        `yaml:"dedicated_test_group" json:"dedicated_test_group"`
+	TestURLs              []string      `yaml:"test_urls" json:"test_urls"`
+	TestTimeout           time.Duration `yaml:"test_timeout" json:"test_timeout"`
+	ToleranceMs           int           `yaml:"tolerance_ms" json:"tolerance_ms"`         // milliseconds
+	CleanupDays           int           `yaml:"cleanup_days" json:"cleanup_days"`         // days
+	MaxConcurrent         int           `yaml:"max_concurrent" json:"max_concurrent"`
+	WebPort               int           `yaml:"web_port" json:"web_port"`
+	ClashProxyURL         string        `yaml:"clash_proxy_url" json:"clash_proxy_url"`
+	MaxBackoffCycles      int           `yaml:"max_backoff_cycles" json:"max_backoff_cycles"`
 
-	
-		
-	EnableBrowserTest bool     `yaml:"enable_browser_test"`
-	BrowserTestURLs      []string      `yaml:"browser_test_urls"`
-	BrowserCacheDuration time.Duration `yaml:"browser_cache_duration"`
-
-	Notifications NotificationConfig `yaml:"notifications"`
+	EnableBrowserTest bool     `yaml:"enable_browser_test" json:"enable_browser_test"`
+	BrowserTestURLs   []string `yaml:"browser_test_urls" json:"browser_test_urls"`
 }
 
 const ConfigFile = "rover_config.yaml"
@@ -99,23 +91,15 @@ enable_browser_test: true
 browser_test_urls:
   - "https://www.google.com"
   - "https://www.youtube.com"
-
-# 服務驗證成功的快取時間 (預設 24h)，期間內若成功過則不再重複啟動瀏覽器測試
-browser_cache_duration: 24h
-
-# 原生桌面通知設定
-notifications:
-  enable: true
-  notify_on_better_node: false
 `
 
 func writeYAMLConfig(cfg *Config) error {
-	yamlStr := fmt.Sprintf(defaultYAMLTemplate,
-		cfg.APIUrl,
-		cfg.APISecret,
-		int(cfg.CheckInterval.Seconds()),
-	)
-	return os.WriteFile(ConfigFile, []byte(yamlStr), 0644)
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+	header := []byte("# Clash Node Rover 設定檔\n# 此檔案由系統自動寫入\n\n")
+	return os.WriteFile(ConfigFile, append(header, data...), 0644)
 }
 
 func loadConfig() (*Config, error) {
@@ -137,9 +121,6 @@ func loadConfig() (*Config, error) {
 			json.Unmarshal(data, &oldCfg)
 
 			cfg.APIUrl = oldCfg.APIUrl
-			if cfg.APIUrl == "" {
-				cfg.APIUrl = "http://127.0.0.1:9090"
-			}
 			cfg.APISecret = oldCfg.APISecret
 			cfg.CheckInterval = oldCfg.CheckInterval
 			if cfg.CheckInterval == 0 {
@@ -217,44 +198,17 @@ func loadConfig() (*Config, error) {
 		// 如果原本沒設定 BrowserTestURLs，代表是舊版升級，預設開啟測試
 		cfg.EnableBrowserTest = true
 	}
-	if cfg.BrowserCacheDuration <= 0 {
-		cfg.BrowserCacheDuration = 24 * time.Hour
-	}
 
 	return &cfg, nil
 }
 
 func promptForConfig() (*Config, error) {
-	reader := bufio.NewReader(os.Stdin)
-	fmt.Println("首次執行設定。請設定 Node Rover。")
-
-	fmt.Print("請輸入 Clash API 網址 [http://127.0.0.1:9090]: ")
-	apiUrl, _ := reader.ReadString('\n')
-	apiUrl = strings.TrimSpace(apiUrl)
-	if apiUrl == "" {
-		apiUrl = "http://127.0.0.1:9090"
-	}
-
-	fmt.Print("請輸入 Clash API 密碼 (如果沒有請留空): ")
-	apiSecret, _ := reader.ReadString('\n')
-	apiSecret = strings.TrimSpace(apiSecret)
-
-	fmt.Print("請輸入檢查間隔 (秒) [60]: ")
-	intervalStr, _ := reader.ReadString('\n')
-	intervalStr = strings.TrimSpace(intervalStr)
-	interval := 60
-	if intervalStr != "" {
-		if val, err := strconv.Atoi(intervalStr); err == nil && val > 0 {
-			interval = val
-		} else {
-			fmt.Println("無效的間隔，使用預設值 60 秒。")
-		}
-	}
+	fmt.Println("首次執行設定，請透過 Web UI 進行 Clash API 設定。")
 
 	cfg := &Config{
-		APIUrl:              apiUrl,
-		APISecret:           apiSecret,
-		CheckInterval:       time.Duration(interval) * time.Second,
+		APIUrl:              "",
+		APISecret:           "",
+		CheckInterval:       60 * time.Second,
 		TargetGroups:        []string{"🤖 Node Rover"},
 		TestURLs:            []string{"http://www.gstatic.com/generate_204", "http://cp.cloudflare.com/generate_204", "http://www.apple.com/library/test/success.html"},
 		TestTimeout:         5 * time.Second,
@@ -266,11 +220,6 @@ func promptForConfig() (*Config, error) {
 		MaxBackoffCycles:    5,
 		EnableBrowserTest:   true,
 		BrowserTestURLs:     []string{"https://www.google.com", "https://www.youtube.com"},
-		BrowserCacheDuration: 24 * time.Hour,
-		Notifications: NotificationConfig{
-			Enable:             true,
-			NotifyOnBetterNode: false,
-		},
 	}
 
 	if err := writeYAMLConfig(cfg); err != nil {

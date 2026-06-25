@@ -162,7 +162,191 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 	})
 
+	http.HandleFunc("/api/setup", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"is_configured": rover.GetConfig().APIUrl != "",
+				"api_url":       rover.GetConfig().APIUrl,
+			})
+			return
+		}
 
+		if r.Method == "POST" {
+			var req struct {
+				APIUrl    string `json:"api_url"`
+				APISecret string `json:"api_secret"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid request", http.StatusBadRequest)
+				return
+			}
+			if req.APIUrl == "" {
+				http.Error(w, "API URL cannot be empty", http.StatusBadRequest)
+				return
+			}
+
+			// Verify connection
+			testAPI := NewAPIClient(req.APIUrl, req.APISecret)
+			if err := testAPI.VerifyConnection(); err != nil {
+				http.Error(w, fmt.Sprintf("連線驗證失敗: %v", err), http.StatusBadRequest)
+				return
+			}
+
+			// Update config
+			rover.cfgMutex.Lock()
+			rover.cfg.APIUrl = req.APIUrl
+			rover.cfg.APISecret = req.APISecret
+			rover.cfgMutex.Unlock()
+			
+			writeYAMLConfig(rover.GetConfig())
+			
+			// Update API client
+			rover.api = testAPI
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			return
+		}
+		
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	type ConfigDTO struct {
+		APIUrl               string             `json:"api_url"`
+		APISecret            string             `json:"api_secret"`
+		CheckInterval        int                `json:"check_interval"`
+		TargetGroups         []string           `json:"target_groups"`
+		DedicatedTestGroup   string             `json:"dedicated_test_group"`
+		TestURLs             []string           `json:"test_urls"`
+		TestTimeout          int                `json:"test_timeout"`
+		ToleranceMs          int                `json:"tolerance_ms"`
+		CleanupDays          int                `json:"cleanup_days"`
+		MaxConcurrent        int                `json:"max_concurrent"`
+		WebPort              int                `json:"web_port"`
+		ClashProxyURL        string             `json:"clash_proxy_url"`
+		MaxBackoffCycles     int                `json:"max_backoff_cycles"`
+		EnableBrowserTest    bool               `json:"enable_browser_test"`
+		BrowserTestURLs      []string           `json:"browser_test_urls"`
+	}
+
+	http.HandleFunc("/api/config", func(w http.ResponseWriter, r *http.Request) {
+		cfg := rover.GetConfig()
+		
+		if r.Method == "GET" {
+			dto := ConfigDTO{
+				APIUrl:               cfg.APIUrl,
+				APISecret:            cfg.APISecret,
+				CheckInterval:        int(cfg.CheckInterval.Seconds()),
+				TargetGroups:         cfg.TargetGroups,
+				DedicatedTestGroup:   cfg.DedicatedTestGroup,
+				TestURLs:             cfg.TestURLs,
+				TestTimeout:          int(cfg.TestTimeout.Seconds()),
+				ToleranceMs:          cfg.ToleranceMs,
+				CleanupDays:          cfg.CleanupDays,
+				MaxConcurrent:        cfg.MaxConcurrent,
+				WebPort:              cfg.WebPort,
+				ClashProxyURL:        cfg.ClashProxyURL,
+				MaxBackoffCycles:     cfg.MaxBackoffCycles,
+				EnableBrowserTest:    cfg.EnableBrowserTest,
+				BrowserTestURLs:      cfg.BrowserTestURLs,
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(dto)
+			return
+		}
+
+		if r.Method == "POST" {
+			var dto ConfigDTO
+			if err := json.NewDecoder(r.Body).Decode(&dto); err != nil {
+				http.Error(w, "Invalid JSON payload", http.StatusBadRequest)
+				return
+			}
+
+			// Apply to a new Config object to write
+			newCfg := &Config{
+				APIUrl:               dto.APIUrl,
+				APISecret:            dto.APISecret,
+				CheckInterval:        time.Duration(dto.CheckInterval) * time.Second,
+				TargetGroups:         dto.TargetGroups,
+				DedicatedTestGroup:   dto.DedicatedTestGroup,
+				TestURLs:             dto.TestURLs,
+				TestTimeout:          time.Duration(dto.TestTimeout) * time.Second,
+				ToleranceMs:          dto.ToleranceMs,
+				CleanupDays:          dto.CleanupDays,
+				MaxConcurrent:        dto.MaxConcurrent,
+				WebPort:              dto.WebPort,
+				ClashProxyURL:        dto.ClashProxyURL,
+				MaxBackoffCycles:     dto.MaxBackoffCycles,
+				EnableBrowserTest:    dto.EnableBrowserTest,
+				BrowserTestURLs:      dto.BrowserTestURLs,
+			}
+
+			if err := writeYAMLConfig(newCfg); err != nil {
+				http.Error(w, "Failed to save config: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+
+			// 立刻熱更新記憶體中的 API 憑證，避免等候 2 秒的檔案掃描
+			rover.cfgMutex.Lock()
+			rover.cfg = newCfg
+			rover.api = NewAPIClient(newCfg.APIUrl, newCfg.APISecret)
+			rover.cfgMutex.Unlock()
+			rover.checkBrowserTestURLsChanged()
+			rover.ForceCheck()
+
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			return
+		}
+
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	http.HandleFunc("/api/selectors", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" {
+			api := rover.GetAPI()
+			if api == nil {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode([]string{})
+				return
+			}
+			selectors, err := api.GetSelectors()
+			if err != nil {
+				http.Error(w, fmt.Sprintf("取得 Selector 失敗: %v", err), http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(selectors)
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
+
+	http.HandleFunc("/api/test-connection", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			var req struct {
+				APIUrl    string `json:"api_url"`
+				APISecret string `json:"api_secret"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "Invalid request", http.StatusBadRequest)
+				return
+			}
+			
+			testAPI := NewAPIClient(req.APIUrl, req.APISecret)
+			if err := testAPI.VerifyConnection(); err != nil {
+				http.Error(w, fmt.Sprintf("連線驗證失敗: %v", err), http.StatusBadRequest)
+				return
+			}
+			
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			return
+		}
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	})
 
 	http.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
 		statMap := rover.GetStatResults()
@@ -251,12 +435,14 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"is_running":   rover.IsRunning.Load(),
-			"is_paused":    rover.GetIsPaused(),
-			"mem_alloc_mb": float64(m.Alloc) / 1024 / 1024,
-			"mem_sys_mb":   float64(m.Sys) / 1024 / 1024,
-			"db_size_mb":   dbSizeMB,
-			"log_count":    GetLogHistoryCount(),
+			"is_running":    rover.IsRunning.Load(),
+			"is_paused":     rover.GetIsPaused(),
+			"is_configured": rover.GetConfig().APIUrl != "",
+			"api_connected": rover.ApiConnected.Load(),
+			"mem_alloc_mb":  float64(m.Alloc) / 1024 / 1024,
+			"mem_sys_mb":    float64(m.Sys) / 1024 / 1024,
+			"db_size_mb":    dbSizeMB,
+			"log_count":     GetLogHistoryCount(),
 		})
 	})
 

@@ -210,7 +210,17 @@ func (r *Rover) GetBackoffRemaining(node string) int {
 func (r *Rover) GetBrowserBackoffRemaining(name string) map[string]int {
 	r.stateMutex.RLock()
 	defer r.stateMutex.RUnlock()
-	return r.browserBackoffRemaining[name]
+	
+	original, ok := r.browserBackoffRemaining[name]
+	if !ok || original == nil {
+		return nil
+	}
+	
+	res := make(map[string]int, len(original))
+	for k, v := range original {
+		res[k] = v
+	}
+	return res
 }
 
 func (r *Rover) watchConfig() {

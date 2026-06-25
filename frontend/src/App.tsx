@@ -13,7 +13,7 @@ function App() {
         fetchStatus();
     });
 
-    const [activeTab, setActiveTab] = useState('ranking');
+    const [activeTab, setActiveTab] = useState('home');
     const [isLightTheme, setIsLightTheme] = useState(false);
 
     useEffect(() => {
@@ -48,26 +48,32 @@ function App() {
                 </button>
             </div>
 
-            <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
-
-            <div style={{marginBottom: '24px'}}>
-                <div className="grid" id="groupsGrid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px'}}>
-                    {groups.map(g => (
-                        <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
-                    ))}
-                </div>
-            </div>
+                        <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
 
             <div className="segmented-button" style={{display: 'inline-flex', marginBottom: '24px'}}>
-                <button id="btn-ranking" className={`seg-btn ${activeTab === 'ranking' ? 'active' : ''}`} onClick={() => setActiveTab('ranking')}>
-                    <span className="material-symbols-outlined" style={{fontSize:'18px'}}>leaderboard</span> 排行榜
+                <button id="btn-home" className={`seg-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
+                    <span className="material-symbols-outlined" style={{fontSize:'18px'}}>home</span> 首頁
                 </button>
-                                <button id="btn-logs" className={`seg-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                <button id="btn-logs" className={`seg-btn ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
                     <span className="material-symbols-outlined" style={{fontSize:'18px'}}>terminal</span> 系統日誌
                 </button>
             </div>
 
-            <div id="tab-ranking" className={`tab-content ${activeTab === 'ranking' ? 'active' : ''}`} style={{display: activeTab === 'ranking' ? 'block' : 'none'}}>
+            <div id="tab-home" className={`tab-content ${activeTab === 'home' ? 'active' : ''}`} style={{display: activeTab === 'home' ? 'block' : 'none'}}>
+                <div style={{marginBottom: '24px'}}>
+                    <div className="grid" id="groupsGrid" style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px'}}>
+                        {groups.map(g => (
+                            <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
+                        ))}
+                    </div>
+                </div>
+                <NodeRanking stats={stats} />
+            </div>
+
+            
+
+            <div id="tab-home" className={`tab-content ${activeTab === 'home' ? 'active' : ''}`} style={{display: activeTab === 'home' ? 'block' : 'none'}}>
+                
                 <NodeRanking stats={stats} />
             </div>
 

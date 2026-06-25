@@ -27,11 +27,11 @@ export default function NodeRanking({ stats }: any) {
     const renderServiceBadge = (node: any, name: string, url: string) => {
         const status = getServiceStatus(node, url);
         if (status === "unknown") {
-            return <span key={name} className="hig-badge" style={{backgroundColor: 'var(--hig-bg-tertiary)', color: 'var(--hig-text-secondary)'}} title="未測試或未知">{name}: ?</span>;
+            return <span key={name} className="hig-badge gray" title="未測試或未知">{name}</span>;
         } else if (status === "ok") {
-            return <span key={name} className="hig-badge green" title="驗證通過">{name}: OK</span>;
+            return <span key={name} className="hig-badge green" title="驗證通過">{name}</span>;
         } else {
-            return <span key={name} className="hig-badge red" title="驗證失敗">{name}: ERR</span>;
+            return <span key={name} className="hig-badge red" title="驗證失敗">{name}</span>;
         }
     };
 
@@ -150,7 +150,7 @@ export default function NodeRanking({ stats }: any) {
                                     <td style={{textAlign: 'center', color: isDead ? 'var(--hig-text-secondary)' : 'inherit'}}>{!isDead ? `${s.AvgDelay} ms` : '-'}</td>
                                     <td style={{textAlign: 'center', color: isDead ? 'var(--hig-text-secondary)' : 'inherit'}}>{!isDead ? `${s.Jitter} ms` : '-'}</td>
                                     <td>
-                                        <div style={{display:'flex', gap:'4px', flexWrap:'wrap', justifyContent: 'center'}}>
+                                        <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
                                             {renderServiceBadge(s, "GPT", "https://chatgpt.com")}
                                             {renderServiceBadge(s, "Gem", "https://gemini.google.com/app")}
                                             {renderServiceBadge(s, "Anti", "https://generativelanguage.googleapis.com/v1beta/models")}

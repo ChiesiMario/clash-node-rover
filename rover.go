@@ -758,16 +758,19 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 
 				filter := r.getGroupFilter(groupName)
-				testURLs := append([]string(nil), r.GetConfig().BrowserTestURLs...)
+				requiredURLs := append([]string(nil), r.GetConfig().BrowserTestURLs...)
 				if filter.CheckChatGPT {
-					testURLs = append(testURLs, "https://chatgpt.com")
+					requiredURLs = append(requiredURLs, "https://chatgpt.com")
 				}
 				if filter.CheckGemini {
-					testURLs = append(testURLs, "https://gemini.google.com/app")
+					requiredURLs = append(requiredURLs, "https://gemini.google.com/app")
 				}
 				if filter.CheckAntigravity {
-					testURLs = append(testURLs, "https://generativelanguage.googleapis.com/v1beta/models")
+					requiredURLs = append(requiredURLs, "https://generativelanguage.googleapis.com/v1beta/models")
 				}
+
+				testURLs := append([]string(nil), r.GetConfig().BrowserTestURLs...)
+				testURLs = append(testURLs, "https://chatgpt.com", "https://gemini.google.com/app", "https://generativelanguage.googleapis.com/v1beta/models")
 
 				if urlTestCache[candidate] == nil {
 					urlTestCache[candidate] = make(map[string]bool)
@@ -802,7 +805,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				var failedURL string
 
 				r.stateMutex.Lock()
-				for _, targetURL := range testURLs {
+				for _, targetURL := range requiredURLs {
 					if urlMap, ok := r.browserBackoffRemaining[candidate]; ok {
 						if rem := urlMap[targetURL]; rem > 0 {
 							anyCachedFailed = true
@@ -814,7 +817,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				r.stateMutex.Unlock()
 
 				if !anyCachedFailed {
-					for _, targetURL := range testURLs {
+					for _, targetURL := range requiredURLs {
 						if success, exists := urlTestCache[candidate][targetURL]; exists {
 							if !success {
 								anyCachedFailed = true
@@ -875,8 +878,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				}
 
 				logInfo("使用無頭瀏覽器測試: %s...", formatNode(candidate))
-				allSuccess := true
-				var totalLoadTime int
+				allRequiredSuccess := true
+				totalLoadTime := 0
 				for _, targetURL := range testURLs {
 
 					var checkingWhat string
@@ -915,10 +918,20 @@ func (r *Rover) runCheckCycle(isManual bool) {
 					cancelCtx()
 
 					if err != nil {
+						isTargetRequired := false
+						for _, rURL := range requiredURLs {
+							if rURL == targetURL {
+								isTargetRequired = true
+								break
+							}
+						}
+
 						logWarning("  ❌ 服務連線超時或失敗: %s (%v)", checkingWhat, err)
 						urlTestCache[candidate][targetURL] = false
 						r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
-						allSuccess = false
+						if isTargetRequired {
+							allRequiredSuccess = false
+						}
 						r.stateMutex.Lock()
 						if r.browserFailedConsec[candidate] == nil {
 							r.browserFailedConsec[candidate] = make(map[string]int)
@@ -934,7 +947,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						}
 						r.browserBackoffRemaining[candidate][targetURL] = skipCycles
 						r.stateMutex.Unlock()
-						break 
+						continue 
 					} else {
 						// 檢查是否有被地區阻擋
 						lowerText := strings.ToLower(innerText)
@@ -954,10 +967,19 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						}
 
 						if blocked {
+							isTargetRequired := false
+							for _, rURL := range requiredURLs {
+								if rURL == targetURL {
+									isTargetRequired = true
+									break
+								}
+							}
 							logWarning("  ❌ 服務驗證失敗 (地區限制或封鎖): %s", checkingWhat)
 							urlTestCache[candidate][targetURL] = false
 							r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
-							allSuccess = false
+							if isTargetRequired {
+								allRequiredSuccess = false
+							}
 						r.stateMutex.Lock()
 						if r.browserFailedConsec[candidate] == nil {
 							r.browserFailedConsec[candidate] = make(map[string]int)
@@ -973,7 +995,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						}
 						r.browserBackoffRemaining[candidate][targetURL] = skipCycles
 						r.stateMutex.Unlock()
-							break
+							continue
 						}
 
 						logSuccess("  ✅ 服務驗證通過: %s (%d ms)", checkingWhat, loadTimeMs)
@@ -1000,7 +1022,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				}
 
 				
-				if allSuccess {
+				if allRequiredSuccess {
 					targetNode = candidate
 					targetReason = fmt.Sprintf("綜合分數 (%d ms) 且各項服務驗證皆成功 (%d ms)", stat.Score, totalLoadTime)
 					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 驗證通過：節點 %s 支援所有必要服務", formatNode(candidate)))

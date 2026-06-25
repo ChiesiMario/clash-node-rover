@@ -984,9 +984,10 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						if r.browserFailedConsec[candidate] != nil {
 							r.browserFailedConsec[candidate][targetURL] = 0
 						}
-						if r.browserBackoffRemaining[candidate] != nil {
-							r.browserBackoffRemaining[candidate][targetURL] = 0
+						if r.browserBackoffRemaining[candidate] == nil {
+							r.browserBackoffRemaining[candidate] = make(map[string]int)
 						}
+						r.browserBackoffRemaining[candidate][targetURL] = 0
 						r.stateMutex.Unlock()
 					}
 				}

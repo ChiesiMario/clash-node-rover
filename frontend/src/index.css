@@ -93,7 +93,7 @@ body {
 
 /* ====== SIDEBAR (macOS Style) ====== */
 .sidebar {
-    width: 240px;
+    width: 200px;
     background-color: var(--hig-glass-bg);
     backdrop-filter: blur(40px);
     -webkit-backdrop-filter: blur(40px);

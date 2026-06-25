@@ -273,7 +273,7 @@ body {
     background-color: var(--hig-bg-secondary);
     border-radius: 12px;
     border: 1px solid var(--hig-separator);
-    overflow: hidden;
+    overflow-x: auto;
 }
 table { width: 100%; border-collapse: collapse; text-align: left; }
 th {
@@ -284,6 +284,7 @@ th {
     font-weight: 600;
     padding: 12px 16px;
     border-bottom: 1px solid var(--hig-separator);
+    white-space: nowrap;
 }
 td {
     padding: 16px;
@@ -291,6 +292,7 @@ td {
     font-size: 15px;
     color: var(--hig-text-primary);
     font-family: inherit;
+    white-space: nowrap;
 }
 tr:last-child td { border-bottom: none; }
 tr { transition: background-color 0.2s; }

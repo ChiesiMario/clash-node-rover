@@ -474,17 +474,29 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		
 		filter := r.getGroupFilter(groupName)
 		var filteredNodes []string
+		var excludedNodes []string
 		var rx *regexp.Regexp
 		if filter.KeywordRegex != "" {
 			rx, _ = regexp.Compile("(?i)" + filter.KeywordRegex)
+			logInfo("群組 [%s] 啟用正則篩選條件: %s", groupName, filter.KeywordRegex)
 		}
+		
 		for _, n := range group.All {
 			if rx != nil && !rx.MatchString(n) {
+				excludedNodes = append(excludedNodes, n)
 				continue
 			}
 			filteredNodes = append(filteredNodes, n)
 		}
 		
+		if len(excludedNodes) > 0 {
+			sampleSize := 3
+			if len(excludedNodes) < 3 {
+				sampleSize = len(excludedNodes)
+			}
+			logInfo("  ➤ 已排除 %d 個不符條件的節點 (例如: %s)", len(excludedNodes), strings.Join(excludedNodes[:sampleSize], ", "))
+		}
+
 		if len(filteredNodes) == 0 && len(group.All) > 0 {
 			logWarning("群組 [%s] 的節點被過濾規則全部排除了，退回使用全部節點。", groupName)
 			filteredNodes = group.All

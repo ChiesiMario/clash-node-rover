@@ -116,7 +116,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 		if req.Method == "GET" {
 			val, _ := db.GetMetadata("group_filter_" + groupName)
 			if val == "" {
-				val = `{"keyword_regex": "", "check_chatgpt": false, "check_gemini": false, "check_antigravity": false}`
+				val = `{"keyword_regex": ""}`
 			}
 			w.Header().Set("Content-Type", "application/json")
 			w.Write([]byte(val))
@@ -126,9 +126,6 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 		if req.Method == "POST" {
 			var filter struct {
 				KeywordRegex string `json:"keyword_regex"`
-				CheckChatGPT     bool   `json:"check_chatgpt"`
-				CheckGemini      bool   `json:"check_gemini"`
-				CheckAntigravity bool   `json:"check_antigravity"`
 			}
 			if err := json.NewDecoder(req.Body).Decode(&filter); err != nil {
 				http.Error(w, "Invalid request", http.StatusBadRequest)
@@ -202,8 +199,7 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 			score := sc.Score
 			if isDead {
 				score = 99999
-			}
-			
+			}			
 			list = append(list, StatNode{
 				Name:                    sc.Name,
 				AvgDelay:                sc.AvgDelay,

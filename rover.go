@@ -410,11 +410,11 @@ func (r *Rover) ForceCheck() {
 }
 
 type nodeStat struct {
-	Name     string
-	AvgDelay int
-	Jitter   int
-	Score    int
-	Err      error
+	Name          string
+	AvgDelay      int
+	Jitter        int
+	Score         int
+	Err           error
 }
 
 func (r *Rover) GetStatResults() map[string]nodeStat {
@@ -470,6 +470,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		if len(group.All) == 0 {
 			continue
 		}
+		
 		
 		filter := r.getGroupFilter(groupName)
 		var filteredNodes []string
@@ -757,20 +758,11 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 
 
-				filter := r.getGroupFilter(groupName)
+				
 				requiredURLs := append([]string(nil), r.GetConfig().BrowserTestURLs...)
-				if filter.CheckChatGPT {
-					requiredURLs = append(requiredURLs, "https://chatgpt.com")
-				}
-				if filter.CheckGemini {
-					requiredURLs = append(requiredURLs, "https://gemini.google.com/app")
-				}
-				if filter.CheckAntigravity {
-					requiredURLs = append(requiredURLs, "https://generativelanguage.googleapis.com/v1beta/models")
-				}
 
 				testURLs := append([]string(nil), r.GetConfig().BrowserTestURLs...)
-				testURLs = append(testURLs, "https://chatgpt.com", "https://gemini.google.com/app", "https://generativelanguage.googleapis.com/v1beta/models")
+				
 
 				if urlTestCache[candidate] == nil {
 					urlTestCache[candidate] = make(map[string]bool)
@@ -778,11 +770,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 				// 嘗試從資料庫載入持久化快取 (避免反覆切換節點進行耗時網頁測試)
 				for _, targetURL := range testURLs {
-					isServiceURL := strings.Contains(targetURL, "chatgpt.com") || 
-					                strings.Contains(targetURL, "gemini.google.com") || 
-					                strings.Contains(targetURL, "generativelanguage.googleapis")
-					
-					if isServiceURL {
+					{
 						if _, exists := urlTestCache[candidate][targetURL]; !exists {
 							lastSuccess, err := r.db.GetLastBrowserSuccessTime(candidate, targetURL)
 							if err == nil && !lastSuccess.IsZero() {
@@ -881,17 +869,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				allRequiredSuccess := true
 				totalLoadTime := 0
 				for _, targetURL := range testURLs {
-
-					var checkingWhat string
-					if strings.Contains(targetURL, "chatgpt.com") {
-						checkingWhat = "ChatGPT"
-					} else if strings.Contains(targetURL, "gemini.google.com") {
-						checkingWhat = "Gemini"
-					} else if strings.Contains(targetURL, "generativelanguage.googleapis") {
-						checkingWhat = "Antigravity"
-					} else {
-						checkingWhat = "基礎連線 (" + targetURL + ")"
-					}
+					checkingWhat := "基礎連線 (" + targetURL + ")"
 
 					if success, exists := urlTestCache[candidate][targetURL]; exists {
 						if success {
@@ -950,21 +928,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						continue 
 					} else {
 						// 檢查是否有被地區阻擋
-						lowerText := strings.ToLower(innerText)
+						
 						blocked := false
-						if strings.Contains(targetURL, "chatgpt.com") {
-							if strings.Contains(lowerText, "access denied") || strings.Contains(lowerText, "not available in your country") {
-								blocked = true
-							}
-						} else if strings.Contains(targetURL, "gemini.google.com") {
-							if strings.Contains(lowerText, "isn't supported in your country") || strings.Contains(lowerText, "未在該地區推出") || strings.Contains(lowerText, "not available") {
-								blocked = true
-							}
-						} else if strings.Contains(targetURL, "generativelanguage.googleapis") {
-							if strings.Contains(lowerText, "user location is not supported") {
-								blocked = true
-							}
-						}
 
 						if blocked {
 							isTargetRequired := false
@@ -1100,9 +1065,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 type GroupFilter struct {
 	KeywordRegex string `json:"keyword_regex"`
-	CheckChatGPT     bool   `json:"check_chatgpt"`
-	CheckGemini      bool   `json:"check_gemini"`
-	CheckAntigravity bool   `json:"check_antigravity"`
 }
 
 func (r *Rover) getGroupFilter(groupName string) GroupFilter {

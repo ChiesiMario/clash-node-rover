@@ -9,9 +9,6 @@ const REGION_PRESETS: Record<string, string> = {
 
 export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFilter }: any) {
     const rx = group.filter?.keyword_regex || "";
-    const isChatGPT = group.filter?.check_chatgpt || false;
-    const isGemini = group.filter?.check_gemini || false;
-    const isAntigravity = group.filter?.check_antigravity || false;
 
     const handleRegionChange = (val: string, currentSelected: boolean) => {
         let regexes: string[] = [];
@@ -20,11 +17,7 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
             if (r === val) isR = !currentSelected;
             if (isR) regexes.push(REGION_PRESETS[r]);
         });
-        saveFilter(group.name, { keyword_regex: regexes.join('|'), check_chatgpt: isChatGPT, check_gemini: isGemini, check_antigravity: isAntigravity });
-    };
-
-    const handleServiceChange = (service: string, currentSelected: boolean) => {
-        saveFilter(group.name, { keyword_regex: rx, check_chatgpt: service === 'chatgpt' ? !currentSelected : isChatGPT, check_gemini: service === 'gemini' ? !currentSelected : isGemini, check_antigravity: service === 'antigravity' ? !currentSelected : isAntigravity });
+        saveFilter(group.name, { keyword_regex: regexes.join('|')});
     };
 
     return (
@@ -68,21 +61,6 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
                             </div>
                         );
                     })}
-                </div>
-            </div>
-
-            <div>
-                <div className="hig-caption-1" style={{color: 'var(--hig-text-secondary)', marginBottom: '8px'}}>服務過濾 (SERVICES)</div>
-                <div className="chip-group">
-                    <div className={`hig-chip ${isChatGPT ? 'selected' : ''}`} onClick={() => handleServiceChange('chatgpt', isChatGPT)}>
-                        ChatGPT
-                    </div>
-                    <div className={`hig-chip ${isGemini ? 'selected' : ''}`} onClick={() => handleServiceChange('gemini', isGemini)}>
-                        Gemini
-                    </div>
-                    <div className={`hig-chip ${isAntigravity ? 'selected' : ''}`} onClick={() => handleServiceChange('antigravity', isAntigravity)}>
-                        Antigravity
-                    </div>
                 </div>
             </div>
         </div>

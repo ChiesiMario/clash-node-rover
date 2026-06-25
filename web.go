@@ -8,10 +8,12 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"sync"
 	"time"
 
+	"github.com/getlantern/systray"
 	"github.com/gorilla/websocket"
 )
 
@@ -349,7 +351,16 @@ func StartWebServer(db *DB, rover *Rover, port int) {
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("🌐 Web 儀表板已啟動，請訪問: http://127.0.0.1%s", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
-		log.Fatalf("Web 伺服器啟動失敗: %v", err)
+		log.Printf("Web 伺服器啟動失敗: %v", err)
+		
+		// 若是在 Windows 且遇到 Port 衝突等錯誤，顯示錯誤對話框提示使用者
+		if runtime.GOOS == "windows" {
+			errMsg := fmt.Sprintf("Node Rover 啟動失敗！\n\n原因: 可能是 %d Port 已被佔用，或者背景已經有一個 Node Rover 正在執行。\n\n詳細錯誤: %v", port, err)
+			exec.Command("powershell", "-WindowStyle", "Hidden", "-Command", fmt.Sprintf(`Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show('%s', 'Node Rover 錯誤', 'OK', 'Error')`, errMsg)).Start()
+		}
+		
+		// 呼叫 systray.Quit() 確保能夠優雅退出，避免在 Windows 留下幽靈 Tray Icon
+		systray.Quit()
 	}
 }
 

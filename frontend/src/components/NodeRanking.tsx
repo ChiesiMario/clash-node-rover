@@ -17,6 +17,24 @@ export default function NodeRanking({ stats }: any) {
     const [chartData, setChartData] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(false);
 
+    const getServiceStatus = (node: any, url: string) => {
+        if (!node.browser_backoff_remaining) return "unknown";
+        if (node.browser_backoff_remaining[url] === undefined) return "unknown";
+        if (node.browser_backoff_remaining[url] > 0) return "fail";
+        return "ok";
+    };
+
+    const renderServiceBadge = (node: any, name: string, url: string) => {
+        const status = getServiceStatus(node, url);
+        if (status === "unknown") {
+            return <span key={name} className="hig-badge" style={{backgroundColor: 'var(--hig-bg-tertiary)', color: 'var(--hig-text-secondary)'}} title="未測試或未知">{name}: ?</span>;
+        } else if (status === "ok") {
+            return <span key={name} className="hig-badge green" title="驗證通過">{name}: OK</span>;
+        } else {
+            return <span key={name} className="hig-badge red" title="驗證失敗">{name}: ERR</span>;
+        }
+    };
+
     const handleRowClick = async (nodeName: string) => {
         if (expandedNode === nodeName) {
             setExpandedNode(null);
@@ -101,8 +119,8 @@ export default function NodeRanking({ stats }: any) {
                         <th style={{textAlign: 'center'}}>綜合評分</th>
                         <th style={{textAlign: 'center'}}>連線延遲</th>
                         <th style={{textAlign: 'center'}}>網路抖動</th>
-                        <th>分發狀態</th>
                         <th style={{textAlign: 'center'}}>服務可用性</th>
+                        <th>分發狀態</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -131,6 +149,13 @@ export default function NodeRanking({ stats }: any) {
                                     </td>
                                     <td style={{textAlign: 'center', color: isDead ? 'var(--hig-text-secondary)' : 'inherit'}}>{!isDead ? `${s.AvgDelay} ms` : '-'}</td>
                                     <td style={{textAlign: 'center', color: isDead ? 'var(--hig-text-secondary)' : 'inherit'}}>{!isDead ? `${s.Jitter} ms` : '-'}</td>
+                                    <td>
+                                        <div style={{display:'flex', gap:'4px', flexWrap:'wrap', justifyContent: 'center'}}>
+                                            {renderServiceBadge(s, "GPT", "https://chatgpt.com")}
+                                            {renderServiceBadge(s, "Gem", "https://gemini.google.com/app")}
+                                            {renderServiceBadge(s, "Anti", "https://generativelanguage.googleapis.com/v1beta/models")}
+                                        </div>
+                                    </td>
                                     <td>
                                         {s.highest_in_groups && s.highest_in_groups.length > 0 ? (
                                             <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>

@@ -31,7 +31,9 @@ export default function NodeRanking({ stats }: any) {
         } else if (status === "ok") {
             return <span key={name} className="hig-badge green" title="驗證通過">{name}</span>;
         } else {
-            return <span key={name} className="hig-badge red" title="驗證失敗">{name}</span>;
+            const rem = node.browser_backoff_remaining ? node.browser_backoff_remaining[url] : 0;
+            const text = rem > 0 ? `${name} (退避 ${rem})` : name;
+            return <span key={name} className="hig-badge red" title={`驗證失敗 (退避剩餘 ${rem} 次)`}>{text}</span>;
         }
     };
 
@@ -126,7 +128,7 @@ export default function NodeRanking({ stats }: any) {
                 <tbody>
                     {stats.map((s: any, idx: number) => {
                         const isDead = s.is_dead || false;
-                        const scoreStr = isDead ? "FAIL" : s.Score;
+                        const scoreStr = isDead ? (s.backoff_remaining > 0 ? `退避中 (${s.backoff_remaining})` : "連線失敗") : s.Score;
                         const isExpanded = expandedNode === s.Name;
                         
                         return (

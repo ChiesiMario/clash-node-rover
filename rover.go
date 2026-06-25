@@ -449,6 +449,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	groupNodesMap := make(map[string][]string)
 	groupNowMap := make(map[string]string)
 	uniqueNodes := make(map[string]bool)
+	groupReports := make(map[string][]string)
 
 	providers, err := r.api.GetProxyProviders()
 	if err == nil {
@@ -495,11 +496,24 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				sampleSize = len(excludedNodes)
 			}
 			logInfo("  ➤ 已排除 %d 個不符條件的節點 (例如: %s)", len(excludedNodes), strings.Join(excludedNodes[:sampleSize], ", "))
+			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("🔍 過濾條件：%s (已排除 %d/%d 個不符節點)", filter.KeywordRegex, len(excludedNodes), len(group.All)))
+		} else if filter.KeywordRegex != "" {
+			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("🔍 過濾條件：%s (無節點被排除)", filter.KeywordRegex))
+		} else {
+			groupReports[groupName] = append(groupReports[groupName], colorMuted.Sprintf("🔍 過濾條件：無 (全部 %d 個節點參與測速)", len(group.All)))
 		}
 
 		if len(filteredNodes) == 0 && len(group.All) > 0 {
 			logWarning("群組 [%s] 的節點被過濾規則全部排除了，退回使用全部節點。", groupName)
 			filteredNodes = group.All
+			
+			// Replace the previous filter report with a warning
+			for i, r := range groupReports[groupName] {
+				if strings.Contains(r, "過濾條件") {
+					groupReports[groupName][i] = colorWarning.Sprintf("⚠️ 過濾失效：條件 '%s' 排除所有節點，退回使用全部 %d 個節點", filter.KeywordRegex, len(group.All))
+					break
+				}
+			}
 		}
 
 		groupNodesMap[groupName] = filteredNodes
@@ -685,7 +699,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 		}
 
 		// Short-Circuit Selection Phase
-		groupReports := make(map[string][]string)
 		var systemReports []string
 		systemReports = append(systemReports, fmt.Sprintf("退避：共 %s 個節點連線失敗，目前處於退避期", formatVal(totalBackoff)))
 		systemReports = append(systemReports, fmt.Sprintf("測速：本次共 Ping 測試 %s 個節點", formatVal(len(nodesToTest))))
@@ -714,6 +727,12 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 			currentNow := groupNowMap[groupName]
 			logGroupTitle(groupName)
+
+			if r.IsGroupLocked(groupName) {
+				logInfo("  ➤ 略過測試... (群組已鎖定，維持現有節點 %s)", formatNode(currentNow))
+				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🔒 略過測試：群組已鎖定，維持現有節點 %s", formatNode(currentNow)))
+				continue
+			}
 
 			var groupCandidates []nodeStat
 			for _, stat := range successfulStats {
@@ -780,25 +799,8 @@ func (r *Rover) runCheckCycle(isManual bool) {
 					urlTestCache[candidate] = make(map[string]bool)
 				}
 
-				// 嘗試從資料庫載入持久化快取 (避免反覆切換節點進行耗時網頁測試)
-				for _, targetURL := range testURLs {
-					{
-						if _, exists := urlTestCache[candidate][targetURL]; !exists {
-							lastSuccess, err := r.db.GetLastBrowserSuccessTime(candidate, targetURL)
-							if err == nil && !lastSuccess.IsZero() {
-								if time.Since(lastSuccess) < r.GetConfig().BrowserCacheDuration {
-									urlTestCache[candidate][targetURL] = true
-									r.stateMutex.Lock()
-									if r.browserBackoffRemaining[candidate] == nil {
-										r.browserBackoffRemaining[candidate] = make(map[string]int)
-									}
-									r.browserBackoffRemaining[candidate][targetURL] = 0
-									r.stateMutex.Unlock()
-								}
-							}
-						}
-					}
-				}
+				// 快取僅限於本次測速週期 (同週期記憶體快取)
+				// 不再從資料庫讀取 24 小時持久化快取
 
 				allCachedAndSuccess := true
 				anyCachedFailed := false
@@ -839,10 +841,10 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				}
 
 				if allCachedAndSuccess {
-					logInfo("  ➤ 略過測試 %s... (命中資料庫持久化快取，所有網站測試皆在有效期內)", formatNode(candidate))
+					logInfo("  ➤ 略過測試 %s... (命中同週期快取，稍早已通過所有網站測試)", formatNode(candidate))
 					targetNode = candidate
-					targetReason = fmt.Sprintf("快取命中：綜合分數 (%d ms) 且各項網站測試皆在有效期內", stat.Score)
-					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 測試通過：快取命中 %s 已通過所有必要網站測試", formatNode(candidate)))
+					targetReason = fmt.Sprintf("快取命中：綜合分數 (%d ms) 且同週期內各項網站測試皆已通過", stat.Score)
+					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 測試通過：快取命中 %s 稍早已通過所有必要網站測試", formatNode(candidate)))
 					break
 				}
 
@@ -937,7 +939,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						}
 						r.browserBackoffRemaining[candidate][targetURL] = skipCycles
 						r.stateMutex.Unlock()
-						continue 
+						break 
 					} else {
 						// 檢查是否有被地區阻擋
 						
@@ -972,7 +974,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						}
 						r.browserBackoffRemaining[candidate][targetURL] = skipCycles
 						r.stateMutex.Unlock()
-							continue
+							break
 						}
 
 						logSuccess("  ✅ 網站測試通過: %s (%d ms)", checkingWhat, loadTimeMs)
@@ -1015,16 +1017,12 @@ func (r *Rover) runCheckCycle(isManual bool) {
 			}
 
 			if targetNode != currentNow && currentNow != "" {
-				if r.IsGroupLocked(groupName) {
-					groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🔒 最終決策：發現更佳節點 %s (%s)，但群組已鎖定，維持 %s", formatNode(targetNode), targetReason, formatNode(currentNow)))
-				} else {
-					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：切換至 %s (%s)", formatNode(targetNode), targetReason))
-					systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
-					finalSwitches[groupName] = targetNode
-					
-					if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
-						beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
-					}
+				groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("✅ 最終決策：切換至 %s (%s)", formatNode(targetNode), targetReason))
+				systemReports = append(systemReports, colorSuccess.Sprintf("✅ 成功：群組 [%s] 切換至 %s", groupName, formatNode(targetNode)))
+				finalSwitches[groupName] = targetNode
+				
+				if r.GetConfig().Notifications.Enable && r.GetConfig().Notifications.NotifyOnBetterNode {
+					beeep.Notify("Clash Node Rover", fmt.Sprintf("群組 [%s] 更換較佳節點為 %s", groupName, targetNode), "")
 				}
 			} else {
 				groupReports[groupName] = append(groupReports[groupName], fmt.Sprintf("🛡️ 最終決策：維持現有節點 %s (%s)", formatNode(currentNow), targetReason))

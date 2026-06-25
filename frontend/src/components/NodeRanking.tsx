@@ -89,36 +89,45 @@ export default function NodeRanking({ stats }: { stats: NodeStat[] }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {stats.map((node, index) => {
-                            let scoreHtml = node.is_dead ? 
-                                <span className="score-box" style={{background:'var(--md-sys-color-error-container)', color:'var(--md-sys-color-on-error-container)'}}>失敗</span> : 
-                                <span className="score-box">{node.Score}</span>;
+                        {stats.length === 0 ? (
+                            <tr>
+                                <td colSpan={6} style={{padding: '32px', textAlign: 'center', color: 'var(--md-sys-color-outline)'}}>
+                                    <span className="material-symbols-outlined" style={{fontSize: '48px', marginBottom: '16px'}}>hourglass_empty</span>
+                                    <div style={{fontSize: '16px'}}>目前尚無節點數據，請等待系統測速完成...</div>
+                                </td>
+                            </tr>
+                        ) : (
+                            stats.map((node, index) => {
+                                let scoreHtml = node.is_dead ? 
+                                    <span className="score-box" style={{background:'var(--md-sys-color-error-container)', color:'var(--md-sys-color-on-error-container)'}}>失敗</span> : 
+                                    <span className="score-box">{node.Score}</span>;
 
-                            return (
-                                <Fragment key={node.Name}>
-                                    <tr className={`node-row ${expandedNode === node.Name ? 'expanded-row' : ''}`} style={{borderBottom:'1px solid var(--md-sys-color-outline-variant)', cursor: 'pointer'}} onClick={() => setExpandedNode(expandedNode === node.Name ? null : node.Name)}>
-                                        <td style={{padding:'16px 8px'}}>#{index + 1}</td>
-                                        <td style={{padding:'16px 8px', fontWeight:500, color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>
-                                            {node.Name}
-                                            {node.provider && <><br/><div className="badge primary" style={{marginTop:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>corporate_fare</span> {node.provider}</div></>}
-                                        </td>
-                                        <td style={{padding:'16px 8px'}}>{scoreHtml}</td>
-                                        <td style={{padding:'16px 8px', color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{node.is_dead ? 'N/A' : `${node.AvgDelay} ms`}</td>
-                                        <td style={{padding:'16px 8px', color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{node.is_dead ? 'N/A' : `${node.Jitter} ms`}</td>
-                                        <td style={{padding:'16px 8px'}}>
-                                            {node.highest_in_groups?.map(g => <div key={g} className="badge success" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>workspace_premium</span> {g}</div>)}
-                                            {node.backoff_remaining > 0 && <div className="badge error" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>timer_off</span> Ping 退避 ({node.backoff_remaining} 輪)</div>}
-                                            {node.browser_backoff_remaining && Object.entries(node.browser_backoff_remaining).map(([url, rem]) => rem > 0 && (
-                                                <div key={url} className="badge warning" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>web_asset_off</span> {url.includes('chatgpt') ? 'ChatGPT' : url.includes('gemini') ? 'Gemini' : url.includes('generative') ? 'Antigravity' : '網頁'} 退避 ({rem} 輪)</div>
-                                            ))}
-                                        </td>
-                                    </tr>
-                                    {expandedNode === node.Name && !node.is_dead && (
-                                        <ChartRow nodeName={node.Name} avgDelay={node.AvgDelay} jitter={node.Jitter} score={node.Score} />
-                                    )}
-                                </Fragment>
-                            );
-                        })}
+                                return (
+                                    <Fragment key={node.Name}>
+                                        <tr className={`node-row ${expandedNode === node.Name ? 'expanded-row' : ''}`} style={{borderBottom:'1px solid var(--md-sys-color-outline-variant)', cursor: 'pointer'}} onClick={() => setExpandedNode(expandedNode === node.Name ? null : node.Name)}>
+                                            <td style={{padding:'16px 8px'}}>#{index + 1}</td>
+                                            <td style={{padding:'16px 8px', fontWeight:500, color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>
+                                                {node.Name}
+                                                {node.provider && <><br/><div className="badge primary" style={{marginTop:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>corporate_fare</span> {node.provider}</div></>}
+                                            </td>
+                                            <td style={{padding:'16px 8px'}}>{scoreHtml}</td>
+                                            <td style={{padding:'16px 8px', color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{node.is_dead ? 'N/A' : `${node.AvgDelay} ms`}</td>
+                                            <td style={{padding:'16px 8px', color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{node.is_dead ? 'N/A' : `${node.Jitter} ms`}</td>
+                                            <td style={{padding:'16px 8px'}}>
+                                                {node.highest_in_groups?.map(g => <div key={g} className="badge success" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>workspace_premium</span> {g}</div>)}
+                                                {node.backoff_remaining > 0 && <div className="badge error" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>timer_off</span> Ping 退避 ({node.backoff_remaining} 輪)</div>}
+                                                {node.browser_backoff_remaining && Object.entries(node.browser_backoff_remaining).map(([url, rem]) => rem > 0 && (
+                                                    <div key={url} className="badge warning" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>web_asset_off</span> {url.includes('chatgpt') ? 'ChatGPT' : url.includes('gemini') ? 'Gemini' : url.includes('generative') ? 'Antigravity' : '網頁'} 退避 ({rem} 輪)</div>
+                                                ))}
+                                            </td>
+                                        </tr>
+                                        {expandedNode === node.Name && !node.is_dead && (
+                                            <ChartRow nodeName={node.Name} avgDelay={node.AvgDelay} jitter={node.Jitter} score={node.Score} />
+                                        )}
+                                    </Fragment>
+                                );
+                            })
+                        )}
                     </tbody>
                 </table>
             </div>

@@ -841,11 +841,13 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				}
 
 				if anyCachedFailed {
+					logInfo("  ➤ 略過測試 %s... (部分服務在快取或退避中已標記為失敗: %s)", formatNode(candidate), failedURL)
 					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 驗證失敗：部分服務在快取或退避中已失敗 (%s)，淘汰並順延: %s", failedURL, formatNode(candidate)))
 					continue
 				}
 
 				if allCachedAndSuccess {
+					logInfo("  ➤ 略過測試 %s... (命中資料庫持久化快取，所有服務驗證皆在有效期內)", formatNode(candidate))
 					targetNode = candidate
 					targetReason = fmt.Sprintf("快取命中：綜合分數 (%d ms) 且各項服務驗證皆在有效期內", stat.Score)
 					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 驗證通過：快取命中 %s 支援所有必要服務", formatNode(candidate)))

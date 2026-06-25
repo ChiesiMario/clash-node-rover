@@ -50,18 +50,18 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
             {group.provider && <div className="badge primary" style={{alignSelf: 'flex-start'}}><span className="material-symbols-outlined" style={{fontSize:'14px'}}>corporate_fare</span> {group.provider}</div>}
             <div className="md3-body-medium" style={{color: 'var(--md-sys-color-on-surface-variant)', marginTop:'8px', marginBottom:'8px'}}>運行中 &bull; 共 {group.all_count} 個節點</div>
             <div style={{display: 'flex', gap: '8px'}}>
-                <select className="md3-select" id={`select-${group.name}`} defaultValue={group.now} style={{flex:1}}>
+                <select className="md3-select" id={`select-${group.name}`} defaultValue={group.now} style={{flex:1, height: '40px'}}>
                     {group.all_nodes.map((n: string) => <option key={n} value={n} >{n}</option>)}
                 </select>
                 <button onClick={() => {
                     const sel = document.getElementById(`select-${group.name}`) as HTMLSelectElement;
                     manualSwitch(group.name, sel.value);
-                }} className="btn" style={{padding: '8px 16px'}}>切換</button>
+                }} className="btn" style={{padding: '0 20px', whiteSpace: 'nowrap', height: '40px'}}>切換</button>
             </div>
             
             <div style={{marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--md-sys-color-outline-variant)'}}>
                 <div style={{fontSize: '13px', fontWeight: 500, marginBottom: '8px', color: 'var(--md-sys-color-primary)'}}>節點地區篩選</div>
-                <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', fontSize: '13px'}}>
+                <div style={{display: 'flex', gap: '16px', rowGap: '12px', flexWrap: 'wrap', fontSize: '13px'}}>
                     {['US', 'HK', 'TW', 'JP', 'SG', 'UK'].map(r => (
                         <label key={r} className="md3-checkbox-label">
                             <input type="checkbox" checked={rx.includes(r + '|')} onChange={(e) => handleRegionChange(r, e.target.checked)} /> 
@@ -70,7 +70,7 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
                     ))}
                 </div>
                 <div style={{fontSize: '13px', fontWeight: 500, marginTop: '12px', marginBottom: '8px', color: 'var(--md-sys-color-primary)'}}>必備服務驗證</div>
-                <div style={{display: 'flex', gap: '12px', fontSize: '13px'}}>
+                <div style={{display: 'flex', gap: '16px', rowGap: '12px', fontSize: '13px'}}>
                     <label className="md3-checkbox-label"><input type="checkbox" checked={isChatGPT} onChange={(e) => handleServiceChange('chatgpt', e.target.checked)} /> 🤖 ChatGPT</label>
                     <label className="md3-checkbox-label"><input type="checkbox" checked={isGemini} onChange={(e) => handleServiceChange('gemini', e.target.checked)} /> ✨ Gemini</label>
                     <label className="md3-checkbox-label"><input type="checkbox" checked={isAntigravity} onChange={(e) => handleServiceChange('antigravity', e.target.checked)} /> 🚀 Antigravity</label>

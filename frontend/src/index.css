@@ -279,7 +279,7 @@ body {
 .group-card {
     background-color: var(--md-sys-color-surface-container-highest);
     border-radius: 16px;
-    padding: 16px;
+    padding: 24px;
     display: flex;
     flex-direction: column;
     gap: 12px;

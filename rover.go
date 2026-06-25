@@ -797,6 +797,12 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						if err == nil && !lastSuccess.IsZero() {
 							if time.Since(lastSuccess) < r.GetConfig().BrowserCacheDuration {
 								urlTestCache[candidate][targetURL] = true
+								r.stateMutex.Lock()
+								if r.browserBackoffRemaining[candidate] == nil {
+									r.browserBackoffRemaining[candidate] = make(map[string]int)
+								}
+								r.browserBackoffRemaining[candidate][targetURL] = 0
+								r.stateMutex.Unlock()
 							}
 						}
 					}

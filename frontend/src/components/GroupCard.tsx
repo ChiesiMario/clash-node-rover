@@ -59,7 +59,7 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
 
             <div className="input-group">
                 <select id={`select-${group.name}`} defaultValue={group.now}>
-                    {group.all_nodes.map((n: string) => <option key={n} value={n} >{n}</option>)}
+                    {group.all_nodes && group.all_nodes.map((n: string) => <option key={n} value={n} >{n}</option>)}
                 </select>
                 <button className="input-btn" onClick={() => {
                     const sel = document.getElementById(`select-${group.name}`) as HTMLSelectElement;

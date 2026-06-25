@@ -86,6 +86,7 @@ export function useApi() {
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify(filterData)
         });
+        fetchGroups();
     };
 
     const fetchNodeHistory = async (nodeName: string) => {

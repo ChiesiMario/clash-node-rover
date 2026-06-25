@@ -941,42 +941,6 @@ func (r *Rover) runCheckCycle(isManual bool) {
 						r.stateMutex.Unlock()
 						break 
 					} else {
-						// 檢查是否有被地區阻擋
-						
-						blocked := false
-
-						if blocked {
-							isTargetRequired := false
-							for _, rURL := range requiredURLs {
-								if rURL == targetURL {
-									isTargetRequired = true
-									break
-								}
-							}
-							logWarning("  ❌ 網站測試失敗 (地區限制或封鎖): %s", checkingWhat)
-							urlTestCache[candidate][targetURL] = false
-							r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
-							if isTargetRequired {
-								allRequiredSuccess = false
-							}
-						r.stateMutex.Lock()
-						if r.browserFailedConsec[candidate] == nil {
-							r.browserFailedConsec[candidate] = make(map[string]int)
-						}
-						if r.browserBackoffRemaining[candidate] == nil {
-							r.browserBackoffRemaining[candidate] = make(map[string]int)
-						}
-						r.browserFailedConsec[candidate][targetURL]++
-						fails := r.browserFailedConsec[candidate][targetURL]
-						skipCycles := int(math.Pow(2, float64(fails-1)))
-						if skipCycles > r.GetConfig().MaxBackoffCycles {
-							skipCycles = r.GetConfig().MaxBackoffCycles
-						}
-						r.browserBackoffRemaining[candidate][targetURL] = skipCycles
-						r.stateMutex.Unlock()
-							break
-						}
-
 						logSuccess("  ✅ 網站測試通過: %s (%d ms)", checkingWhat, loadTimeMs)
 						urlTestCache[candidate][targetURL] = true
 						r.db.InsertBrowserLog(candidate, targetURL, true, loadTimeMs)

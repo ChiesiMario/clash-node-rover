@@ -102,6 +102,7 @@ export default function NodeRanking({ stats }: any) {
                         <th style={{textAlign: 'center'}}>連線延遲</th>
                         <th style={{textAlign: 'center'}}>網路抖動</th>
                         <th>分發狀態</th>
+                        <th style={{textAlign: 'center'}}>服務可用性</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -142,7 +143,7 @@ export default function NodeRanking({ stats }: any) {
                                 </tr>
                                 {isExpanded && (
                                     <tr>
-                                        <td colSpan={6} style={{padding: '24px', backgroundColor: 'var(--hig-bg-secondary)', borderBottom: '1px solid var(--hig-separator)'}}>
+                                        <td colSpan={7} style={{padding: '24px', backgroundColor: 'var(--hig-bg-secondary)', borderBottom: '1px solid var(--hig-separator)'}}>
                                             <div style={{height: '300px', width: '100%'}}>
                                                 {isLoading ? (
                                                     <div style={{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--hig-text-secondary)'}}>

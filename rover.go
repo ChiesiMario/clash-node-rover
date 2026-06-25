@@ -515,24 +515,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 	}
 	r.stateMutex.Unlock()
 
-	if len(nodesToTest) == 0 || float64(totalBackoff) >= float64(len(uniqueNodes))*0.8 {
-		if len(uniqueNodes) > 0 {
-			logWarning("偵測到大規模節點癱瘓 (退避比例過高)，強制解除所有節點退避狀態以尋找可用節點！")
-			r.stateMutex.Lock()
-			for name := range uniqueNodes {
-				r.backoffRemaining[name] = 0
-				r.failedConsec[name] = 0
-			}
-			r.stateMutex.Unlock()
 
-			nodesToTest = nil
-			backedOffNodes = nil
-			totalBackoff = 0
-			for name := range uniqueNodes {
-				nodesToTest = append(nodesToTest, name)
-			}
-		}
-	}
 
 	defer func() {
 		r.stateMutex.Lock()

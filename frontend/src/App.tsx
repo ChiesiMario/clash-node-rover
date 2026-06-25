@@ -37,7 +37,7 @@ function App() {
     return (
         <div className="container">
             <div className="top-app-bar" style={{marginBottom: '24px', borderRadius: '16px'}}>
-                <div className="app-title">
+                <div className="app-title md3-title-large">
                     <span className="material-symbols-outlined" style={{color: "var(--md-sys-color-primary)", fontSize: "28px"}}>rocket_launch</span>
                     Clash Node Rover
                 </div>
@@ -72,7 +72,7 @@ function App() {
 
             <div id="tab-logs" className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`} style={{display: activeTab === 'logs' ? 'block' : 'none'}}>
                 <div className="card">
-                    <div style={{fontWeight:500, marginBottom:'16px'}}>即時系統日誌</div>
+                    <div className="md3-title-medium" style={{marginBottom:'16px'}}>即時系統日誌</div>
                     <div className="console-wrapper" style={{maxHeight: '600px'}}>
                         <div id="terminalBody" className="console" style={{height: '100%', overflowY: 'auto'}}>
                             {logs.map((log, i) => (

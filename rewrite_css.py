@@ -1,4 +1,6 @@
+import re
 
+css = """
 :root {
     /* Material Design 3 Dark Theme (Tonal Palette based on Blue) */
     --md-sys-color-primary: #a8c7fa;
@@ -476,3 +478,9 @@ tr:last-child td { border-bottom: none; }
 .log-success .log-msg { color: #6dd58c; }
 .log-warning .log-msg { color: #eaddff; }
 .log-error .log-msg { color: #ffb4ab; }
+"""
+
+with open("frontend/src/index.css", "w", encoding="utf-8") as f:
+    f.write(css)
+
+print("index.css successfully rewritten with MD3 specs.")

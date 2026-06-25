@@ -54,9 +54,9 @@ function ChartRow({ nodeName, avgDelay, jitter, score }: { nodeName: string, avg
             <td colSpan={6}>
                 <div style={{padding: '16px'}}>
                     <div style={{display:'flex', gap:'16px', padding:'16px', marginBottom:'16px', background:'var(--md-sys-color-surface-container)', borderRadius:'16px'}}>
-                        <div style={{flex:1}}><div style={{fontSize:'12px', color:'var(--md-sys-color-on-surface-variant)'}}>平均延遲</div><div style={{fontSize:'18px'}}>{avgDelay} ms</div></div>
-                        <div style={{flex:1}}><div style={{fontSize:'12px', color:'var(--md-sys-color-on-surface-variant)'}}>抖動 (Jitter)</div><div style={{fontSize:'18px'}}>{jitter} ms</div></div>
-                        <div style={{flex:1}}><div style={{fontSize:'12px', color:'var(--md-sys-color-on-surface-variant)'}}>綜合分數</div><div style={{fontSize:'18px'}}>{score}</div></div>
+                        <div style={{flex:1}}><div style={{fontSize:'13px', color:'var(--md-sys-color-on-surface-variant)'}}>平均延遲</div><div style={{fontSize:'18px'}}>{avgDelay} ms</div></div>
+                        <div style={{flex:1}}><div style={{fontSize:'13px', color:'var(--md-sys-color-on-surface-variant)'}}>抖動 (Jitter)</div><div style={{fontSize:'18px'}}>{jitter} ms</div></div>
+                        <div style={{flex:1}}><div style={{fontSize:'13px', color:'var(--md-sys-color-on-surface-variant)'}}>綜合分數</div><div style={{fontSize:'18px'}}>{score}</div></div>
                     </div>
                     <div className="chart-container" style={{height: '300px', width: '100%'}}>
                         <canvas ref={canvasRef}></canvas>
@@ -108,16 +108,16 @@ export default function NodeRanking({ stats }: { stats: NodeStat[] }) {
                                             <td style={{padding:'16px 8px'}}>#{index + 1}</td>
                                             <td style={{padding:'16px 8px', fontWeight:500, color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>
                                                 {node.Name}
-                                                {node.provider && <><br/><div className="badge primary" style={{marginTop:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>corporate_fare</span> {node.provider}</div></>}
+                                                {node.provider && <><br/><div className="badge primary" style={{marginTop:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'13px'}}>corporate_fare</span> {node.provider}</div></>}
                                             </td>
                                             <td style={{padding:'16px 8px'}}>{scoreHtml}</td>
                                             <td style={{padding:'16px 8px', color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{node.is_dead ? 'N/A' : `${node.AvgDelay} ms`}</td>
                                             <td style={{padding:'16px 8px', color: node.is_dead ? 'var(--md-sys-color-outline)' : 'inherit'}}>{node.is_dead ? 'N/A' : `${node.Jitter} ms`}</td>
                                             <td style={{padding:'16px 8px'}}>
-                                                {node.highest_in_groups?.map(g => <div key={g} className="badge success" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>workspace_premium</span> {g}</div>)}
-                                                {node.backoff_remaining > 0 && <div className="badge error" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>timer_off</span> Ping 退避 ({node.backoff_remaining} 輪)</div>}
+                                                {node.highest_in_groups?.map(g => <div key={g} className="badge success" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'13px'}}>workspace_premium</span> {g}</div>)}
+                                                {node.backoff_remaining > 0 && <div className="badge error" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'13px'}}>timer_off</span> Ping 退避 ({node.backoff_remaining} 輪)</div>}
                                                 {node.browser_backoff_remaining && Object.entries(node.browser_backoff_remaining).map(([url, rem]) => rem > 0 && (
-                                                    <div key={url} className="badge warning" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'12px'}}>web_asset_off</span> {url.includes('chatgpt') ? 'ChatGPT' : url.includes('gemini') ? 'Gemini' : url.includes('generative') ? 'Antigravity' : '網頁'} 退避 ({rem} 輪)</div>
+                                                    <div key={url} className="badge warning" style={{marginTop:'4px', marginLeft:'4px', fontSize:'10px'}}><span className="material-symbols-outlined" style={{fontSize:'13px'}}>web_asset_off</span> {url.includes('chatgpt') ? 'ChatGPT' : url.includes('gemini') ? 'Gemini' : url.includes('generative') ? 'Antigravity' : '網頁'} 退避 ({rem} 輪)</div>
                                                 ))}
                                             </td>
                                         </tr>

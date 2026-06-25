@@ -821,16 +821,16 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				}
 
 				if anyCachedFailed {
-					logInfo("  ➤ 略過測試 %s... (部分服務在快取或退避中已標記為失敗: %s)", formatNode(candidate), failedURL)
-					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 驗證失敗：部分服務在快取或退避中已失敗 (%s)，淘汰並順延: %s", failedURL, formatNode(candidate)))
+					logInfo("  ➤ 略過測試 %s... (部分網站在快取或退避中已標記為失敗: %s)", formatNode(candidate), failedURL)
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 測試失敗：部分網站在快取或退避中已失敗 (%s)，淘汰並順延: %s", failedURL, formatNode(candidate)))
 					continue
 				}
 
 				if allCachedAndSuccess {
-					logInfo("  ➤ 略過測試 %s... (命中資料庫持久化快取，所有服務驗證皆在有效期內)", formatNode(candidate))
+					logInfo("  ➤ 略過測試 %s... (命中資料庫持久化快取，所有網站測試皆在有效期內)", formatNode(candidate))
 					targetNode = candidate
-					targetReason = fmt.Sprintf("快取命中：綜合分數 (%d ms) 且各項服務驗證皆在有效期內", stat.Score)
-					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 驗證通過：快取命中 %s 支援所有必要服務", formatNode(candidate)))
+					targetReason = fmt.Sprintf("快取命中：綜合分數 (%d ms) 且各項網站測試皆在有效期內", stat.Score)
+					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 測試通過：快取命中 %s 已通過所有必要網站測試", formatNode(candidate)))
 					break
 				}
 
@@ -904,7 +904,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 							}
 						}
 
-						logWarning("  ❌ 服務連線超時或失敗: %s (%v)", checkingWhat, err)
+						logWarning("  ❌ 網站連線超時或失敗: %s (%v)", checkingWhat, err)
 						urlTestCache[candidate][targetURL] = false
 						r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
 						if isTargetRequired {
@@ -939,7 +939,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 									break
 								}
 							}
-							logWarning("  ❌ 服務驗證失敗 (地區限制或封鎖): %s", checkingWhat)
+							logWarning("  ❌ 網站測試失敗 (地區限制或封鎖): %s", checkingWhat)
 							urlTestCache[candidate][targetURL] = false
 							r.db.InsertBrowserLog(candidate, targetURL, false, loadTimeMs)
 							if isTargetRequired {
@@ -963,7 +963,7 @@ func (r *Rover) runCheckCycle(isManual bool) {
 							continue
 						}
 
-						logSuccess("  ✅ 服務驗證通過: %s (%d ms)", checkingWhat, loadTimeMs)
+						logSuccess("  ✅ 網站測試通過: %s (%d ms)", checkingWhat, loadTimeMs)
 						urlTestCache[candidate][targetURL] = true
 						r.db.InsertBrowserLog(candidate, targetURL, true, loadTimeMs)
 						totalLoadTime += loadTimeMs
@@ -989,11 +989,11 @@ func (r *Rover) runCheckCycle(isManual bool) {
 				
 				if allRequiredSuccess {
 					targetNode = candidate
-					targetReason = fmt.Sprintf("綜合分數 (%d ms) 且各項服務驗證皆成功 (%d ms)", stat.Score, totalLoadTime)
-					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 驗證通過：節點 %s 支援所有必要服務", formatNode(candidate)))
+					targetReason = fmt.Sprintf("綜合分數 (%d ms) 且各項網站測試皆成功 (%d ms)", stat.Score, totalLoadTime)
+					groupReports[groupName] = append(groupReports[groupName], colorSuccess.Sprintf("🌐 測試通過：節點 %s 已通過所有必要網站測試", formatNode(candidate)))
 					break
 				} else {
-					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 驗證失敗：節點 %s 未通過服務驗證，淘汰並順延", formatNode(candidate)))
+					groupReports[groupName] = append(groupReports[groupName], colorError.Sprintf("🌐 測試失敗：節點 %s 未通過網站測試，淘汰並順延", formatNode(candidate)))
 				}
 			}
 

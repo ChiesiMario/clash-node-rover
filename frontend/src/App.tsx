@@ -43,24 +43,24 @@ function App() {
                     <div className="brand-icon" style={{background: 'transparent', boxShadow: 'none'}}>
                         <img src={logo} alt="Rover Logo" style={{width: '32px', height: '32px', borderRadius: '8px'}} />
                     </div>
-                    <div className="hig-headline">Node Rover</div>
+                    <div className="hig-headline">節點巡測</div>
                 </div>
                 
                 <button className={`nav-item ${activeTab === 'home' ? 'active' : ''}`} onClick={() => setActiveTab('home')}>
                     <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'home' ? "'FILL' 1" : "'FILL' 0"}}>home</span>
-                    <span className="hig-body">Dashboard</span>
+                    <span className="hig-body">系統總覽</span>
                 </button>
                 
                 <button className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
                     <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'logs' ? "'FILL' 1" : "'FILL' 0"}}>terminal</span>
-                    <span className="hig-body">Logs</span>
+                    <span className="hig-body">系統日誌</span>
                 </button>
 
                 <div className="sidebar-spacer"></div>
 
                 <button className="nav-item" onClick={toggleTheme}>
                     <span className="material-symbols-outlined">{isLightTheme ? 'dark_mode' : 'light_mode'}</span>
-                    <span className="hig-body">Appearance</span>
+                    <span className="hig-body">外觀設定</span>
                 </button>
             </aside>
 
@@ -68,19 +68,19 @@ function App() {
                 <Dashboard status={status} triggerTest={triggerTest} togglePause={togglePause} />
 
                 <div className={`tab-content ${activeTab === 'home' ? 'active' : ''}`}>
-                    <div className="hig-title-2" style={{marginBottom: '24px'}}>Groups</div>
+                    <div className="hig-title-2" style={{marginBottom: '24px'}}>節點群組管理</div>
                     <div className="grid-groups">
                         {groups.map(g => (
                             <GroupCard key={g.name} group={g} manualSwitch={manualSwitch} toggleGroupLock={toggleGroupLock} saveFilter={saveFilter} />
                         ))}
                     </div>
                     
-                    <div className="hig-title-2" style={{marginBottom: '24px', marginTop: '48px'}}>Node Rankings</div>
+                    <div className="hig-title-2" style={{marginBottom: '24px', marginTop: '48px'}}>節點即時排行榜</div>
                     <NodeRanking stats={stats} />
                 </div>
 
                 <div className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`}>
-                    <div className="hig-title-2" style={{marginBottom: '24px'}}>System Logs</div>
+                    <div className="hig-title-2" style={{marginBottom: '24px'}}>系統即時日誌</div>
                     <div className="hig-card" style={{padding: '0', border: 'none'}}>
                         <div className="console">
                             {logs.map((log, i) => (

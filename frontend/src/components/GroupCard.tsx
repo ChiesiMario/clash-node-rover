@@ -33,16 +33,16 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
                 <div>
                     <div className="hig-title-3" style={{marginBottom: '2px'}}>{group.name}</div>
                     <div className="hig-footnote" style={{color: 'var(--hig-text-secondary)'}}>
-                        {group.all_count} nodes running
+                        包含 {group.all_count} 個節點
                     </div>
                 </div>
-                <button className="icon-btn" onClick={() => toggleGroupLock(group.name, !group.locked)} title={group.locked ? 'Unlock' : 'Lock'}>
+                <button className="icon-btn" onClick={() => toggleGroupLock(group.name, !group.locked)} title={group.locked ? '解除鎖定' : '鎖定群組'}>
                     <span className={`material-symbols-outlined ${group.locked ? 'fill' : ''}`} style={{color: group.locked ? 'var(--hig-system-blue)' : 'var(--hig-text-secondary)'}}>{group.locked ? 'lock' : 'lock_open_right'}</span>
                 </button>
             </div>
 
             <div>
-                <div className="hig-caption-1" style={{color: 'var(--hig-text-secondary)', marginBottom: '8px'}}>MANUAL SELECT</div>
+                <div className="hig-caption-1" style={{color: 'var(--hig-text-secondary)', marginBottom: '8px'}}>手動切換節點</div>
                 <div style={{display: 'flex', gap: '8px'}}>
                     <div className="hig-picker" style={{flex: 1}}>
                         <select id={`select-${group.name}`} defaultValue={group.now}>
@@ -53,12 +53,12 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
                     <button className="btn secondary" style={{height: '36px'}} onClick={() => {
                         const sel = document.getElementById(`select-${group.name}`) as HTMLSelectElement;
                         manualSwitch(group.name, sel.value);
-                    }}>Apply</button>
+                    }}>套用</button>
                 </div>
             </div>
             
             <div>
-                <div className="hig-caption-1" style={{color: 'var(--hig-text-secondary)', marginBottom: '8px'}}>REGIONS</div>
+                <div className="hig-caption-1" style={{color: 'var(--hig-text-secondary)', marginBottom: '8px'}}>地區過濾 (REGIONS)</div>
                 <div className="chip-group">
                     {['US', 'HK', 'TW', 'JP', 'SG', 'UK'].map(r => {
                         const isSelected = rx.includes(r + '|');
@@ -72,7 +72,7 @@ export default function GroupCard({ group, manualSwitch, toggleGroupLock, saveFi
             </div>
 
             <div>
-                <div className="hig-caption-1" style={{color: 'var(--hig-text-secondary)', marginBottom: '8px'}}>SERVICES</div>
+                <div className="hig-caption-1" style={{color: 'var(--hig-text-secondary)', marginBottom: '8px'}}>服務過濾 (SERVICES)</div>
                 <div className="chip-group">
                     <div className={`hig-chip ${isChatGPT ? 'selected' : ''}`} onClick={() => handleServiceChange('chatgpt', isChatGPT)}>
                         ChatGPT

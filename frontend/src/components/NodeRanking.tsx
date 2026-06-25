@@ -5,7 +5,7 @@ export default function NodeRanking({ stats }: any) {
         return (
             <div className="hig-card" style={{textAlign:'center', padding:'60px 20px', color:'var(--hig-text-secondary)'}}>
                 <span className="material-symbols-outlined" style={{fontSize:'48px', marginBottom:'16px', opacity: 0.5}}>hourglass_empty</span>
-                <div className="hig-headline">No node data available yet.</div>
+                <div className="hig-headline">尚無節點連線數據</div>
             </div>
         );
     }
@@ -15,12 +15,12 @@ export default function NodeRanking({ stats }: any) {
             <table>
                 <thead>
                     <tr>
-                        <th style={{width: '60px', textAlign: 'center'}}>Rank</th>
-                        <th>Node Name</th>
-                        <th style={{textAlign: 'center'}}>Score</th>
-                        <th style={{textAlign: 'center'}}>Delay</th>
-                        <th style={{textAlign: 'center'}}>Jitter</th>
-                        <th>Status</th>
+                        <th style={{width: '60px', textAlign: 'center'}}>排名</th>
+                        <th>節點名稱</th>
+                        <th style={{textAlign: 'center'}}>綜合評分</th>
+                        <th style={{textAlign: 'center'}}>連線延遲</th>
+                        <th style={{textAlign: 'center'}}>網路抖動</th>
+                        <th>分發狀態</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -46,7 +46,7 @@ export default function NodeRanking({ stats }: any) {
                                             {s.highest_in_groups.map((g: string) => <span key={g} className="hig-badge green">{g}</span>)}
                                         </div>
                                     ) : (
-                                        <span style={{color: 'var(--hig-text-secondary)', fontSize: '13px'}}>Unused</span>
+                                        <span style={{color: 'var(--hig-text-secondary)', fontSize: '13px'}}>閒置中</span>
                                     )}
                                 </td>
                             </tr>

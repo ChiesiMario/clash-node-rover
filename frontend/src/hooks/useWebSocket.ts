@@ -10,6 +10,12 @@ export function useWebSocket(onRefresh: () => void) {
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const wsRef = useRef<WebSocket | null>(null);
 
+    const onRefreshRef = useRef(onRefresh);
+
+    useEffect(() => {
+        onRefreshRef.current = onRefresh;
+    }, [onRefresh]);
+
     useEffect(() => {
         const connect = () => {
             const wsUrl = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/api/ws';
@@ -19,7 +25,9 @@ export function useWebSocket(onRefresh: () => void) {
                 try {
                     const msg = JSON.parse(event.data);
                     if (msg.type === 'refresh') {
-                        onRefresh();
+                        if (onRefreshRef.current) {
+                            onRefreshRef.current();
+                        }
                     } else if (msg.type === 'log') {
                         setLogs(prev => [...prev.slice(-199), msg.entry]);
                     } else if (msg.type === 'log_history') {
@@ -45,7 +53,7 @@ export function useWebSocket(onRefresh: () => void) {
                 wsRef.current.close();
             }
         };
-    }, [onRefresh]);
+    }, []);
 
     return { logs };
 }

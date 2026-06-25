@@ -36,7 +36,8 @@ type Config struct {
 	
 		
 	EnableBrowserTest bool     `yaml:"enable_browser_test"`
-	BrowserTestURLs   []string `yaml:"browser_test_urls"`
+	BrowserTestURLs      []string      `yaml:"browser_test_urls"`
+	BrowserCacheDuration time.Duration `yaml:"browser_cache_duration"`
 
 	Notifications NotificationConfig `yaml:"notifications"`
 }
@@ -98,6 +99,9 @@ enable_browser_test: true
 browser_test_urls:
   - "https://www.google.com"
   - "https://www.youtube.com"
+
+# 服務驗證成功的快取時間 (預設 24h)，期間內若成功過則不再重複啟動瀏覽器測試
+browser_cache_duration: 24h
 
 # 原生桌面通知設定
 notifications:
@@ -213,6 +217,9 @@ func loadConfig() (*Config, error) {
 		// 如果原本沒設定 BrowserTestURLs，代表是舊版升級，預設開啟測試
 		cfg.EnableBrowserTest = true
 	}
+	if cfg.BrowserCacheDuration <= 0 {
+		cfg.BrowserCacheDuration = 24 * time.Hour
+	}
 
 	return &cfg, nil
 }
@@ -259,6 +266,7 @@ func promptForConfig() (*Config, error) {
 		MaxBackoffCycles:    5,
 		EnableBrowserTest:   true,
 		BrowserTestURLs:     []string{"https://www.google.com", "https://www.youtube.com"},
+		BrowserCacheDuration: 24 * time.Hour,
 		Notifications: NotificationConfig{
 			Enable:             true,
 			NotifyOnBetterNode: false,

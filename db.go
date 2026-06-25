@@ -170,6 +170,25 @@ func (d *DB) GetBrowserHistory(nodeName string, hours int) ([]BrowserLog, error)
 	return history, nil
 }
 
+func (d *DB) GetLastBrowserSuccessTime(nodeName string, url string) (time.Time, error) {
+	var timestamp int64
+	query := `
+		SELECT timestamp 
+		FROM browser_logs 
+		WHERE node_name = ? AND url = ? AND success = 1
+		ORDER BY timestamp DESC
+		LIMIT 1
+	`
+	err := d.sqlDB.QueryRow(query, nodeName, url).Scan(&timestamp)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+	return time.Unix(timestamp, 0), nil
+}
+
 func (d *DB) Cleanup(days int) error {
 	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
 

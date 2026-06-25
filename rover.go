@@ -792,17 +792,23 @@ func (r *Rover) runCheckCycle(isManual bool) {
 
 				// 嘗試從資料庫載入持久化快取 (避免反覆切換節點進行耗時網頁測試)
 				for _, targetURL := range testURLs {
-					if _, exists := urlTestCache[candidate][targetURL]; !exists {
-						lastSuccess, err := r.db.GetLastBrowserSuccessTime(candidate, targetURL)
-						if err == nil && !lastSuccess.IsZero() {
-							if time.Since(lastSuccess) < r.GetConfig().BrowserCacheDuration {
-								urlTestCache[candidate][targetURL] = true
-								r.stateMutex.Lock()
-								if r.browserBackoffRemaining[candidate] == nil {
-									r.browserBackoffRemaining[candidate] = make(map[string]int)
+					isServiceURL := strings.Contains(targetURL, "chatgpt.com") || 
+					                strings.Contains(targetURL, "gemini.google.com") || 
+					                strings.Contains(targetURL, "generativelanguage.googleapis")
+					
+					if isServiceURL {
+						if _, exists := urlTestCache[candidate][targetURL]; !exists {
+							lastSuccess, err := r.db.GetLastBrowserSuccessTime(candidate, targetURL)
+							if err == nil && !lastSuccess.IsZero() {
+								if time.Since(lastSuccess) < r.GetConfig().BrowserCacheDuration {
+									urlTestCache[candidate][targetURL] = true
+									r.stateMutex.Lock()
+									if r.browserBackoffRemaining[candidate] == nil {
+										r.browserBackoffRemaining[candidate] = make(map[string]int)
+									}
+									r.browserBackoffRemaining[candidate][targetURL] = 0
+									r.stateMutex.Unlock()
 								}
-								r.browserBackoffRemaining[candidate][targetURL] = 0
-								r.stateMutex.Unlock()
 							}
 						}
 					}

@@ -4,6 +4,7 @@ import { useWebSocket } from './hooks/useWebSocket';
 import Dashboard from './components/Dashboard';
 import GroupCard from './components/GroupCard';
 import NodeRanking from './components/NodeRanking';
+import logo from './assets/logo.png';
 
 function App() {
     const { stats, status, groups, fetchStats, fetchStatus, fetchGroups, triggerTest, togglePause, manualSwitch, toggleGroupLock, saveFilter } = useApi();
@@ -39,8 +40,8 @@ function App() {
         <div className="app-layout">
             <aside className="sidebar">
                 <div className="sidebar-header">
-                    <div className="brand-icon">
-                        <span className="material-symbols-outlined" style={{fontSize: '20px'}}>rocket_launch</span>
+                    <div className="brand-icon" style={{background: 'transparent', boxShadow: 'none'}}>
+                        <img src={logo} alt="Rover Logo" style={{width: '32px', height: '32px', borderRadius: '8px'}} />
                     </div>
                     <div className="hig-headline">Node Rover</div>
                 </div>

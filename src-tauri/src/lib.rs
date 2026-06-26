@@ -15,6 +15,7 @@ use tokio::sync::Notify;
 struct AppState {
     pub config: Mutex<Config>,
     pub force_test: Arc<Notify>,
+    pub last_results: Mutex<Vec<watchdog::GroupResult>>,
 }
 
 #[tauri::command]
@@ -41,8 +42,44 @@ fn force_test(state: tauri::State<AppState>) {
 }
 
 #[tauri::command]
+fn get_latest_results(state: tauri::State<AppState>) -> Vec<watchdog::GroupResult> {
+    state.last_results.lock().unwrap().clone()
+}
+
+#[tauri::command]
 fn get_logs(state: tauri::State<db::Db>) -> Vec<db::LogEntry> {
     state.get_logs(100)
+}
+
+#[tauri::command]
+fn toggle_group_lock(app: tauri::AppHandle, state: tauri::State<AppState>, group: String, locked: bool) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap().clone();
+    if locked {
+        if !config.locked_groups.contains(&group) {
+            config.locked_groups.push(group);
+        }
+    } else {
+        config.locked_groups.retain(|g| g != &group);
+    }
+    *state.config.lock().unwrap() = config.clone();
+    config::save_config(&app, &config)
+}
+
+#[tauri::command]
+async fn manual_switch(app: tauri::AppHandle, state: tauri::State<'_, AppState>, db: tauri::State<'_, db::Db>, group: String, node: String) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap().clone();
+    let api = clash::ClashApi::new(&config.api_url, &config.api_secret);
+    api.select_proxy(&group, &node).await?;
+    db.insert_log("INFO", &format!("手動切換群組 [{}] 至節點: {}", group, node));
+    
+    if !config.locked_groups.contains(&group) {
+        config.locked_groups.push(group.clone());
+        *state.config.lock().unwrap() = config.clone();
+        let _ = config::save_config(&app, &config);
+    }
+    
+    state.force_test.notify_one();
+    Ok(())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,6 +97,7 @@ pub fn run() {
             app.manage(AppState {
                 config: Mutex::new(cfg),
                 force_test: Arc::new(Notify::new()),
+                last_results: Mutex::new(Vec::new()),
             });
             
             // 啟動背景測速守門員
@@ -106,7 +144,10 @@ pub fn run() {
             save_config,
             get_clash_selectors,
             force_test,
-            get_logs
+            get_logs,
+            toggle_group_lock,
+            manual_switch,
+            get_latest_results
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

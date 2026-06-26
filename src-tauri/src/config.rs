@@ -4,6 +4,7 @@ use std::fs;
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Config {
     pub api_url: String,
     pub api_secret: String,
@@ -19,6 +20,7 @@ pub struct Config {
     pub max_backoff_cycles: u64,
     pub enable_browser_test: bool,
     pub browser_test_urls: Vec<String>,
+    pub locked_groups: Vec<String>,
 }
 
 impl Default for Config {
@@ -44,6 +46,7 @@ impl Default for Config {
                 "https://www.google.com".into(),
                 "https://www.youtube.com".into(),
             ],
+            locked_groups: vec![],
         }
     }
 }

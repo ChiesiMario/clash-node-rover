@@ -11,6 +11,20 @@ pub struct AppStatus {
     pub next_check_in: u64,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct NodeResult {
+    pub name: String,
+    pub delay: Option<u64>,
+    pub is_active: bool,
+}
+
+#[derive(serde::Serialize, Clone)]
+pub struct GroupResult {
+    pub group_name: String,
+    pub nodes: Vec<NodeResult>,
+    pub is_locked: bool,
+}
+
 pub fn start_watchdog(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -50,6 +64,8 @@ pub fn start_watchdog(app: AppHandle) {
             // 2. 開始測速演算法
             status.is_testing = true;
             let _ = app.emit("status_update", &status);
+
+            let mut all_group_results: Vec<GroupResult> = Vec::new();
 
             for group in &config.target_groups {
                 if let Ok(detail) = clash.get_proxy_group(group).await {
@@ -93,21 +109,12 @@ pub fn start_watchdog(app: AppHandle) {
                             }
                         }
 
-                        // Emit Node Results
-                        #[derive(serde::Serialize, Clone)]
-                        struct NodeResult {
-                            name: String,
-                            delay: Option<u64>,
-                            is_active: bool,
-                        }
-                        
                         let mut final_results: Vec<NodeResult> = results.iter().map(|(n, r)| NodeResult {
                             name: n.clone(),
                             delay: r.clone().ok(),
                             is_active: n == &current_node,
                         }).collect();
                         
-                        // Sort by delay, put timeouts at the bottom
                         final_results.sort_by(|a, b| {
                             match (a.delay, b.delay) {
                                 (Some(d1), Some(d2)) => d1.cmp(&d2),
@@ -117,12 +124,13 @@ pub fn start_watchdog(app: AppHandle) {
                             }
                         });
 
-                        let _ = app.emit("node_results", &final_results);
-
                         let db = app.state::<Db>();
-                        
                         // Jitter 容忍度邏輯判斷
-                        if let Some(fastest) = fastest_node {
+                        let is_locked = config.locked_groups.contains(group);
+                        
+                        if is_locked {
+                            db.insert_log("INFO", &format!("群組 [{}] 已鎖定，略過自動切換", group));
+                        } else if let Some(fastest) = fastest_node {
                             let diff = if current_node_delay == u64::MAX {
                                 u64::MAX // Current node failed
                             } else {
@@ -138,8 +146,6 @@ pub fn start_watchdog(app: AppHandle) {
                                     for res in &mut final_results {
                                         res.is_active = res.name == fastest;
                                     }
-                                    let _ = app.emit("node_results", &final_results);
-                                    
                                 } else {
                                     db.insert_log("ERROR", &format!("群組 [{}] 切換至 {} 失敗", group, fastest));
                                 }
@@ -150,8 +156,19 @@ pub fn start_watchdog(app: AppHandle) {
                         } else {
                             db.insert_log("WARN", &format!("群組 [{}] 所有節點皆無回應 (Timeout: {}ms)", group, config.test_timeout));
                         }
+
+                        all_group_results.push(GroupResult {
+                            group_name: group.clone(),
+                            nodes: final_results,
+                            is_locked,
+                        });
                     }
                 }
+            }
+
+            let _ = app.emit("node_results", &all_group_results);
+            if let Ok(mut last) = app.state::<AppState>().last_results.lock() {
+                *last = all_group_results.clone();
             }
 
             status.is_testing = false;

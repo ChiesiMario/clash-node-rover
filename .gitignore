@@ -1,27 +1,24 @@
-# Binaries
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Test binary
-*.test
+node_modules
+dist
+dist-ssr
+*.local
 
-# Go workspace
-go.work
-
-# Configuration files
-rover_config.json
-rover_config.yaml.bak
-*.bak
-rover.log
-rover.db
-
-*.db-shm
-*.db-wal
-
-rover_config.yaml
-build/
-*.js
-frontend/package.json.md5
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

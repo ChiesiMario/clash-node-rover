@@ -20,3 +20,8 @@ rover.db
 
 *.db-shm
 *.db-wal
+
+rover_config.yaml
+build/
+*.js
+frontend/package.json.md5

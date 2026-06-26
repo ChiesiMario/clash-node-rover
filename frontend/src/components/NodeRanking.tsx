@@ -93,98 +93,108 @@ export default function NodeRanking({ stats }: any) {
     }
 
     return (
-        <div className="hig-table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th style={{width: '60px', textAlign: 'center'}}>排名</th>
-                        <th>節點名稱</th>
-                        <th style={{textAlign: 'center'}}>綜合評分</th>
-                        <th style={{textAlign: 'center'}}>連線延遲</th>
-                        <th style={{textAlign: 'center'}}>網路抖動</th>
-                        <th>分發狀態</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {stats.map((s: any, idx: number) => {
-                        const isDead = s.is_dead || false;
-                        const scoreStr = isDead ? (s.backoff_remaining > 0 ? `退避中 (${s.backoff_remaining})` : "連線失敗") : s.Score;
-                        const isExpanded = expandedNode === s.Name;
-                        
-                        return (
-                            <React.Fragment key={s.Name}>
-                                <tr 
-                                    onClick={() => handleRowClick(s.Name)}
-                                    style={{
-                                        cursor: 'pointer',
-                                        backgroundColor: isExpanded ? 'var(--hig-bg-tertiary)' : 'transparent'
-                                    }}
-                                >
-                                    <td style={{textAlign: 'center', fontWeight: '600', color: idx < 3 ? 'var(--hig-system-blue)' : 'inherit'}}>
-                                        {idx + 1}
-                                    </td>
-                                    <td style={{fontWeight: '500', color: isDead ? 'var(--hig-text-secondary)' : 'inherit'}}>{s.Name}</td>
-                                    <td style={{textAlign: 'center'}}>
-                                        <div className={`hig-badge ${isDead ? 'red' : 'blue'}`}>
-                                            {scoreStr}
-                                        </div>
-                                    </td>
-                                    <td style={{textAlign: 'center', color: isDead ? 'var(--hig-text-secondary)' : 'inherit'}}>{!isDead ? `${s.AvgDelay} ms` : '-'}</td>
-                                    <td style={{textAlign: 'center', color: isDead ? 'var(--hig-text-secondary)' : 'inherit'}}>{!isDead ? `${s.Jitter} ms` : '-'}</td>
-                                    <td>
+        <div className="apple-list-group">
+            {stats.map((s: any, idx: number) => {
+                const isDead = s.is_dead || false;
+                const scoreStr = isDead ? (s.backoff_remaining > 0 ? `退避 (${s.backoff_remaining})` : "失敗") : s.Score;
+                const isExpanded = expandedNode === s.Name;
+                
+                return (
+                    <React.Fragment key={s.Name}>
+                        <div 
+                            className="apple-list-item"
+                            onClick={() => handleRowClick(s.Name)}
+                            style={{
+                                cursor: 'pointer',
+                                backgroundColor: isExpanded ? 'var(--hig-fill-secondary)' : 'transparent',
+                                display: 'flex',
+                                alignItems: 'center',
+                                padding: '16px'
+                            }}
+                        >
+                            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '16px' }}>
+                                <div style={{ 
+                                    width: '28px', height: '28px', 
+                                    borderRadius: '14px', 
+                                    backgroundColor: idx < 3 ? 'var(--hig-system-blue)' : 'var(--hig-fill-primary)',
+                                    color: idx < 3 ? '#fff' : 'var(--text-secondary)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '13px', fontWeight: 'bold', flexShrink: 0
+                                }}>
+                                    {idx + 1}
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: '17px', fontWeight: '500', color: isDead ? 'var(--hig-text-secondary)' : 'var(--hig-text-primary)' }}>
+                                        {s.Name}
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
                                         {s.highest_in_groups && s.highest_in_groups.length > 0 ? (
-                                            <div style={{display:'flex', gap:'4px', flexWrap:'wrap'}}>
-                                                {s.highest_in_groups.map((g: string) => <span key={g} className="hig-badge green">{g}</span>)}
-                                            </div>
+                                            s.highest_in_groups.map((g: string) => <span key={g} className="hig-badge green" style={{ padding: '2px 6px', fontSize: '10px' }}>{g}</span>)
                                         ) : (
-                                            <span style={{color: 'var(--hig-text-secondary)', fontSize: '13px'}}>閒置中</span>
+                                            <span style={{ fontSize: '13px', color: 'var(--hig-text-secondary)' }}>閒置中</span>
                                         )}
-                                    </td>
-                                </tr>
-                                {isExpanded && (
-                                    <tr>
-                                        <td colSpan={6} style={{padding: '24px', backgroundColor: 'var(--hig-bg-secondary)', borderBottom: '1px solid var(--hig-separator)'}}>
-                                            <div style={{height: '300px', width: '100%'}}>
-                                                {isLoading ? (
-                                                    <div style={{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--hig-text-secondary)'}}>
-                                                        <span className="material-symbols-outlined spin" style={{marginRight: '8px'}}>refresh</span>
-                                                        載入歷史數據中...
-                                                    </div>
-                                                ) : chartData.length === 0 ? (
-                                                    <div style={{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--hig-text-secondary)'}}>
-                                                        尚無足夠的歷史數據可供繪製
-                                                    </div>
-                                                ) : (
-                                                    <ResponsiveContainer width="100%" height="100%">
-                                                        <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                                                            <CartesianGrid strokeDasharray="3 3" stroke="var(--hig-separator)" vertical={false} />
-                                                            <XAxis dataKey="time" stroke="var(--hig-text-secondary)" fontSize={12} tickMargin={10} axisLine={false} tickLine={false} />
-                                                            
-                                                            {/* Y-Axis for Ping */}
-                                                            <YAxis yAxisId="left" stroke="var(--hig-system-blue)" fontSize={12} tickMargin={10} axisLine={false} tickLine={false} />
-                                                            
-                                                            {/* Y-Axis for Browser */}
-                                                            <YAxis yAxisId="right" orientation="right" stroke="var(--hig-system-green)" fontSize={12} tickMargin={10} axisLine={false} tickLine={false} />
-                                                            
-                                                            <Tooltip 
-                                                                contentStyle={{backgroundColor: 'var(--hig-bg-primary)', borderRadius: '8px', border: '1px solid var(--hig-separator)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', color: 'var(--hig-text-primary)'}}
-                                                                itemStyle={{fontWeight: 500}}
-                                                            />
-                                                            <Legend wrapperStyle={{paddingTop: '20px'}} />
-                                                            <Line yAxisId="left" type="monotone" dataKey="Ping" stroke="var(--hig-system-blue)" strokeWidth={3} dot={false} activeDot={{ r: 6 }} name="Ping 延遲 (ms)" />
-                                                            <Line yAxisId="right" type="monotone" dataKey="Browser" stroke="var(--hig-system-green)" strokeWidth={3} dot={false} activeDot={{ r: 6 }} name="網頁加載 (ms)" />
-                                                        </LineChart>
-                                                    </ResponsiveContainer>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
-                                )}
-                            </React.Fragment>
-                        );
-                    })}
-                </tbody>
-            </table>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '24px', alignItems: 'center', textAlign: 'right' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <span style={{ fontSize: '15px', color: isDead ? 'var(--hig-text-secondary)' : 'var(--hig-text-primary)' }}>
+                                        {scoreStr}
+                                    </span>
+                                    <span style={{ fontSize: '12px', color: 'var(--hig-text-secondary)' }}>評分</span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', width: '50px' }}>
+                                    <span style={{ fontSize: '15px', color: isDead ? 'var(--hig-text-secondary)' : 'var(--hig-text-primary)' }}>
+                                        {!isDead ? `${s.Jitter}ms` : '-'}
+                                    </span>
+                                    <span style={{ fontSize: '12px', color: 'var(--hig-text-secondary)' }}>抖動</span>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', width: '50px' }}>
+                                    <span style={{ fontSize: '15px', color: isDead ? 'var(--hig-text-secondary)' : 'var(--hig-text-primary)' }}>
+                                        {!isDead ? `${s.AvgDelay}ms` : '-'}
+                                    </span>
+                                    <span style={{ fontSize: '12px', color: 'var(--hig-text-secondary)' }}>延遲</span>
+                                </div>
+                                <span className="material-symbols-outlined" style={{ color: 'var(--hig-text-secondary)', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.2s' }}>
+                                    chevron_right
+                                </span>
+                            </div>
+                        </div>
+                        {isExpanded && (
+                            <div style={{ padding: '24px', backgroundColor: 'var(--hig-bg-secondary)', borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
+                                <div style={{height: '300px', width: '100%'}}>
+                                    {isLoading ? (
+                                        <div style={{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--hig-text-secondary)'}}>
+                                            <span className="material-symbols-outlined spin" style={{marginRight: '8px'}}>progress_activity</span>
+                                            讀取歷史數據中...
+                                        </div>
+                                    ) : chartData.length > 0 ? (
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <LineChart data={chartData} margin={{top: 5, right: 20, bottom: 5, left: 0}}>
+                                                <CartesianGrid strokeDasharray="3 3" stroke="var(--hig-separator)" vertical={false} />
+                                                <XAxis dataKey="time" stroke="var(--hig-text-secondary)" fontSize={12} tickMargin={10} />
+                                                <YAxis stroke="var(--hig-text-secondary)" fontSize={12} width={40} />
+                                                <Tooltip 
+                                                    contentStyle={{backgroundColor: 'var(--hig-glass-bg)', borderRadius: '12px', border: '1px solid var(--hig-separator)', backdropFilter: 'blur(20px)'}}
+                                                    itemStyle={{color: 'var(--hig-text-primary)'}}
+                                                />
+                                                <Legend />
+                                                <Line type="monotone" dataKey="Ping" stroke="var(--hig-system-blue)" strokeWidth={2} dot={{r: 3}} activeDot={{r: 6}} />
+                                                <Line type="monotone" dataKey="Browser" stroke="var(--hig-system-green)" strokeWidth={2} dot={{r: 3}} />
+                                            </LineChart>
+                                        </ResponsiveContainer>
+                                    ) : (
+                                        <div style={{height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--hig-text-secondary)'}}>
+                                            無歷史數據
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </React.Fragment>
+                );
+            })}
         </div>
     );
 }

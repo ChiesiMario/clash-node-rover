@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { GetStats, GetStatus, GetGroups, ManualTrigger, TogglePause, SwitchNode, SetGroupLocked } from '../../wailsjs/go/main/App';
+import { GetHistory } from '../../wailsjs/go/main/App';
 
 export interface NodeStat {
     Name: string;
@@ -17,6 +19,7 @@ export interface Status {
     is_paused: boolean;
     is_configured?: boolean;
     api_connected?: boolean;
+    is_ready?: boolean;
 }
 
 export function useApi() {
@@ -26,8 +29,8 @@ export function useApi() {
 
     const fetchStats = async () => {
         try {
-            const res = await fetch('/api/stats');
-            const data = await res.json();
+            const data = await GetStats();
+            // @ts-ignore
             setStats(data || []);
         } catch (e) {
             console.error('Failed to fetch stats', e);
@@ -36,8 +39,8 @@ export function useApi() {
 
     const fetchStatus = async () => {
         try {
-            const res = await fetch('/api/status');
-            const data = await res.json();
+            const data = await GetStatus();
+            // @ts-ignore
             setStatus(data);
         } catch (e) {
             console.error('Failed to fetch status', e);
@@ -46,8 +49,7 @@ export function useApi() {
 
     const fetchGroups = async () => {
         try {
-            const res = await fetch('/api/groups');
-            const data = await res.json();
+            const data = await GetGroups();
             setGroups(data || []);
         } catch (e) {
             console.error('Failed to fetch groups', e);
@@ -55,46 +57,33 @@ export function useApi() {
     };
 
     const triggerTest = async () => {
-        await fetch('/api/trigger', { method: 'POST' });
+        await ManualTrigger();
         fetchStatus();
     };
 
     const togglePause = async () => {
-        await fetch('/api/pause', { method: 'POST' });
+        await TogglePause();
         fetchStatus();
     };
 
     const manualSwitch = async (group: string, node: string) => {
-        await fetch('/api/switch', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({group, node})
-        });
+        await SwitchNode(group, node);
         fetchGroups();
     };
 
     const toggleGroupLock = async (group: string, locked: boolean) => {
-        await fetch('/api/groups/lock', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({group, locked})
-        });
+        await SetGroupLocked(group, locked);
         fetchGroups();
     };
 
-    const saveFilter = async (group: string, filterData: any) => {
-        await fetch('/api/groups/filter?group=' + encodeURIComponent(group), {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(filterData)
-        });
-        fetchGroups();
+    const saveFilter = async (_group: string, _filterData: any) => {
+        // ...
     };
 
     const fetchNodeHistory = async (nodeName: string) => {
         try {
-            const res = await fetch('/api/history?node=' + encodeURIComponent(nodeName));
-            return await res.json();
+            const res = await GetHistory(nodeName);
+            return res;
         } catch (e) {
             console.error('Failed to fetch node history', e);
             return { ping: [], browser: [] };

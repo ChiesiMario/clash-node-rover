@@ -1,17 +1,19 @@
 package main
 
 import (
-	_ "embed"
-	"fmt"
+	"embed"
 	"io"
 	"log"
 	"os"
-	"os/exec"
-	"runtime"
 	"sync"
 
-	"github.com/getlantern/systray"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 )
+
+//go:embed all:frontend/dist
+var assets embed.FS
 
 //go:embed icon.ico
 var iconData []byte
@@ -81,6 +83,7 @@ func main() {
 		log.SetOutput(mw)
 	}
 	log.SetFlags(0) // 關閉預設的日期時間前綴
+	
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatalf("讀取設定檔失敗: %v", err)
@@ -96,79 +99,26 @@ func main() {
 	rover := NewRover(cfg, api, db)
 	globalRover = rover
 
-	// 將原本的 main 邏輯移交給 systray
-	systray.Run(func() { onReady(cfg.WebPort) }, onExit)
-}
+	// 建立 Wails App
+	app := NewApp(rover, db)
 
-func onReady(webPort int) {
-	// 設定系統列圖示與提示
-	systray.SetIcon(iconData)
-	systray.SetTitle("Node Rover")
-	systray.SetTooltip("Clash Node Rover - 網路守護中")
+	// 啟動 Wails
+	err = wails.Run(&options.App{
+		Title:  "Clash Node Rover",
+		Width:  1024,
+		Height: 768,
+		AssetServer: &assetserver.Options{
+			Assets: assets,
+		},
+		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		OnStartup:        app.startup,
+		OnShutdown:       app.shutdown,
+		Bind: []interface{}{
+			app,
+		},
+	})
 
-	// 設定右鍵選單
-	mOpen := systray.AddMenuItem("🌐 開啟儀表板", "打開 Web 控制台")
-	mForce := systray.AddMenuItem("⚡ 強制測速", "立刻進行節點測速")
-	systray.AddSeparator()
-	mQuit := systray.AddMenuItem("❌ 退出程式", "安全關閉 Node Rover")
-
-	// 背景啟動核心與 Web
-	go globalRover.Start()
-	go StartWebServer(globalDB, globalRover, webPort)
-
-	// 監聽選單點擊
-	go func() {
-		for {
-			select {
-			case <-mOpen.ClickedCh:
-				openBrowser(fmt.Sprintf("http://localhost:%d", webPort))
-			case <-mForce.ClickedCh:
-				if globalRover != nil {
-					globalRover.ForceCheck()
-				}
-			case <-mQuit.ClickedCh:
-				systray.Quit()
-				return
-			}
-		}
-	}()
-}
-
-func onExit() {
-	log.Println("\n⚠️ 接收到關閉信號，正在安全關閉 Clash Node Rover...")
-
-	if globalRover != nil {
-		globalRover.Stop()
-	}
-
-	if globalDB != nil {
-		if err := globalDB.Close(); err != nil {
-			log.Printf("❌ 資料庫關閉時發生錯誤: %v\n", err)
-		} else {
-			log.Println("✅ 資料庫已安全關閉。")
-		}
-	}
-
-	log.Println("👋 程式已安全退出，感謝使用！")
-
-	if logFile != nil {
-		logFile.Close()
-	}
-}
-
-func openBrowser(url string) {
-	var err error
-	switch runtime.GOOS {
-	case "linux":
-		err = exec.Command("xdg-open", url).Start()
-	case "windows":
-		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
-	case "darwin":
-		err = exec.Command("open", url).Start()
-	default:
-		err = fmt.Errorf("unsupported platform")
-	}
 	if err != nil {
-		log.Printf("無法開啟瀏覽器: %v", err)
+		log.Fatal(err)
 	}
 }

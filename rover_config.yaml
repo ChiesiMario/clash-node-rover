@@ -1,7 +1,7 @@
 # Clash Node Rover 設定檔
 # 此檔案由系統自動寫入
 
-api_url: http://127.0.0.1:9092
+api_url: http://127.0.0.1:9090
 api_secret: ""
 check_interval: 1m0s
 target_groups:
@@ -10,9 +10,9 @@ target_groups:
     - "\U0001F1F8\U0001F1EC 新加坡節點"
 dedicated_test_group: ⚡️ Node Rover (SpeedTest)
 test_urls:
-    - https://www.gstatic.com/generate_204
-    - https://cp.cloudflare.com/generate_204
-    - https://www.apple.com/library/test/success.html
+    - http://www.gstatic.com/generate_204
+    - http://cp.cloudflare.com/generate_204
+    - http://www.apple.com/library/test/success.html
 test_timeout: 5s
 tolerance_ms: 10
 cleanup_days: 7

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
+import { GetLogHistory } from '../../wailsjs/go/main/App';
 
 export interface LogEntry {
     time: string;
@@ -8,8 +10,6 @@ export interface LogEntry {
 
 export function useWebSocket(onRefresh: () => void) {
     const [logs, setLogs] = useState<LogEntry[]>([]);
-    const wsRef = useRef<WebSocket | null>(null);
-
     const onRefreshRef = useRef(onRefresh);
 
     useEffect(() => {
@@ -17,41 +17,26 @@ export function useWebSocket(onRefresh: () => void) {
     }, [onRefresh]);
 
     useEffect(() => {
-        const connect = () => {
-            const wsUrl = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host + '/api/ws';
-            const ws = new WebSocket(wsUrl);
+        // Load initial history
+        GetLogHistory().then((history: any) => {
+            if (history) setLogs(history);
+        });
 
-            ws.onmessage = (event) => {
-                try {
-                    const msg = JSON.parse(event.data);
-                    if (msg.type === 'refresh') {
-                        if (onRefreshRef.current) {
-                            onRefreshRef.current();
-                        }
-                    } else if (msg.type === 'log') {
-                        setLogs(prev => [...prev.slice(-199), msg.entry]);
-                    } else if (msg.type === 'log_history') {
-                        setLogs(msg.history || []);
-                    }
-                } catch (e) {
-                    console.error('WS parse error', e);
-                }
-            };
+        // Listen for new logs
+        EventsOn('log', (entry: any) => {
+            setLogs(prev => [...prev.slice(-199), entry]);
+        });
 
-            ws.onclose = () => {
-                setTimeout(connect, 3000);
-            };
-
-            wsRef.current = ws;
-        };
-
-        connect();
+        // Listen for refresh
+        EventsOn('refresh', () => {
+            if (onRefreshRef.current) {
+                onRefreshRef.current();
+            }
+        });
 
         return () => {
-            if (wsRef.current) {
-                wsRef.current.onclose = null;
-                wsRef.current.close();
-            }
+            EventsOff('log');
+            EventsOff('refresh');
         };
     }, []);
 

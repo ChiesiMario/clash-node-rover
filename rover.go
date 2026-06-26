@@ -273,6 +273,10 @@ func (r *Rover) checkBrowserTestURLsChanged() {
 }
 
 func (r *Rover) checkClashStatus() bool {
+	if r.api == nil {
+		return false
+	}
+
 	wasConnected := r.ApiConnected.Load()
 	defer func() {
 		if wasConnected != r.ApiConnected.Load() {
@@ -280,12 +284,19 @@ func (r *Rover) checkClashStatus() bool {
 		}
 	}()
 
+	err := r.api.VerifyConnection()
+	if err != nil {
+		r.ApiConnected.Store(false)
+		return false
+	}
+
+	// 只要連得上 API 就是連線成功。群組不存在只給警告，不要中斷連線狀態
+	r.ApiConnected.Store(true)
+
 	for _, groupName := range r.GetConfig().TargetGroups {
 		_, err := r.api.GetProxyGroup(groupName)
 		if err != nil {
 			logWarning("群組 [%s] 不存在或查詢失敗: %v", groupName, err)
-			r.ApiConnected.Store(false)
-			return false
 		}
 	}
 
@@ -293,144 +304,137 @@ func (r *Rover) checkClashStatus() bool {
 		_, err := r.api.GetProxyGroup(r.GetConfig().DedicatedTestGroup)
 		if err != nil {
 			logWarning("專屬測速群組 [%s] 不存在或查詢失敗: %v", r.GetConfig().DedicatedTestGroup, err)
-			r.ApiConnected.Store(false)
-			return false
 		}
 	}
 
-	r.ApiConnected.Store(true)
 	return true
 }
 
-func (r *Rover) Start() {
-	logHeader("Clash Node Rover 啟動")
+func (r *Rover) watchdogWorker() {
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Quit:
+			return
+		case <-ticker.C:
+			if r.GetConfig().APIUrl == "" {
+				if r.ApiConnected.Load() {
+					r.ApiConnected.Store(false)
+					logWarning("尚無 Clash API 設定，請透過 Web UI 進行設定。")
+				}
+				continue
+			}
 
-	// 啟動設定檔監控
-	go r.watchConfig()
+			wasConnected := r.ApiConnected.Load()
+			isConnected := r.checkClashStatus()
+			
+			if !wasConnected && isConnected {
+				logSuccess("Clash API 已連線且群組設定無誤。")
+				BroadcastRefresh()
+				// 剛連線成功時，立刻發送一次測速信號
+				select {
+				case r.ManualTrigger <- struct{}{}:
+				default:
+				}
+			} else if wasConnected && !isConnected {
+				logWarning("偵測到 Clash API 異常或失聯，暫停自動測速...")
+				BroadcastRefresh()
+			} else {
+				// 確保每次檢查後若狀態為 true，且這是初次設定後，也能讓前端更新
+				// (以防狀態沒改變但前端漏了更新)
+				BroadcastRefresh()
+			}
+		}
+	}
+}
 
-	// 檢查網頁測試目標是否變更
-	r.checkBrowserTestURLsChanged()
+func (r *Rover) timerWorker() {
+	for {
+		interval := r.GetConfig().CheckInterval
+		if interval < 5 * time.Second {
+			interval = 5 * time.Second
+		}
+		
+		select {
+		case <-r.Quit:
+			return
+		case <-time.After(interval):
+			if r.ApiConnected.Load() && !r.GetIsPaused() {
+				select {
+				case r.ManualTrigger <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
+}
 
-	// 啟動時先執行一次資料庫瘦身
+func (r *Rover) cleanupWorker() {
 	if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
 		logError("資料庫自動瘦身失敗: %v", err)
 	} else {
 		logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
 	}
 
-	// 每天執行一次資料庫瘦身
-	cleanupTicker := time.NewTicker(24 * time.Hour)
-	defer cleanupTicker.Stop()
-
+	ticker := time.NewTicker(24 * time.Hour)
+	defer ticker.Stop()
 	for {
-		// Configuration wait loop
-		for r.GetConfig().APIUrl == "" {
-			logWarning("尚無 Clash API 設定，請透過 Web UI 進行設定。")
-			select {
-			case <-r.Quit:
-				logWarning("背景測速引擎已停止。")
-				return
-			case <-time.After(10 * time.Second):
+		select {
+		case <-r.Quit:
+			return
+		case <-ticker.C:
+			if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
+				logError("資料庫自動瘦身失敗: %v", err)
+			} else {
+				logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
 			}
 		}
-
-		// 外層迴圈: 檢查先決條件 (Recovery Loop)
-		for !r.checkClashStatus() {
-			if r.GetConfig().APIUrl == "" {
-				break
-			}
-			logWarning("偵測到 Clash API 異常或群組設定錯誤，進入 60 秒等待退避模式...")
-			select {
-			case <-r.Quit:
-				logWarning("背景測速引擎已停止。")
-				return
-			case <-r.ManualTrigger:
-				logInfo("收到設定更新或手動觸發信號，立刻中斷退避重試連線...")
-				continue
-			case <-time.After(60 * time.Second):
-				// retry
-			}
-		}
-
-		logSuccess("Clash API 已連線且群組設定無誤，開始正常執行。")
-
-		// 內層迴圈: 正常任務執行 (Active Loop)
-		watchdogCtx, watchdogCancel := context.WithCancel(context.Background())
-
-		apiBroken := make(chan struct{}, 1)
-
-		// 啟動背景健康監控，每 3 秒檢查一次，確保能在中途失聯時立刻發現
-		go func() {
-			healthTicker := time.NewTicker(3 * time.Second)
-			defer healthTicker.Stop()
-			for {
-				select {
-				case <-watchdogCtx.Done():
-					return
-				case <-healthTicker.C:
-					// 進行靜默檢查（若在此期間失聯則發送信號）
-					if !r.checkClashStatus() {
-						select {
-						case apiBroken <- struct{}{}:
-						default:
-						}
-						return
-					}
-				}
-			}
-		}()
-
-		// 進入正常模式時先跑一次
-		r.runCheckCycle(false)
-
-		ticker := time.NewTicker(r.GetConfig().CheckInterval)
-		broken := false
-
-		for !broken {
-			select {
-			case <-apiBroken:
-				broken = true
-				break
-			case <-r.Quit:
-				watchdogCancel()
-				ticker.Stop()
-				logWarning("背景測速引擎已停止。")
-				return
-			case <-ticker.C:
-				if !r.checkClashStatus() {
-					broken = true
-					break
-				}
-				r.runCheckCycle(false)
-			case <-cleanupTicker.C:
-				if err := r.db.Cleanup(r.GetConfig().CleanupDays); err != nil {
-					logError("資料庫自動瘦身失敗: %v", err)
-				} else {
-					logSuccess("資料庫自動瘦身完成 (保留 %s 天)", formatVal(r.GetConfig().CleanupDays))
-				}
-			case <-r.ManualTrigger:
-				logInfo("收到手動測速信號，立即執行！")
-				if !r.checkClashStatus() {
-					broken = true
-					break
-				}
-				ticker.Stop()
-				r.runCheckCycle(true)
-				ticker.Reset(r.GetConfig().CheckInterval)
-			}
-		}
-
-		ticker.Stop()
-		watchdogCancel()
-		logWarning("中斷正常執行週期，準備重新進行 60 秒退避檢查...")
 	}
 }
 
+func (r *Rover) speedTestWorker() {
+	for {
+		select {
+		case <-r.Quit:
+			return
+		case <-r.ManualTrigger:
+			// 只有收到信號時才執行，且必須確保 API 有連線
+			if r.ApiConnected.Load() {
+				r.runCheckCycle(false)
+			}
+		}
+	}
+}
+
+func (r *Rover) Start() {
+	logHeader("Clash Node Rover 啟動")
+
+	r.checkBrowserTestURLsChanged()
+
+	// 啟動各個獨立職責的 Worker 線程
+	go r.watchConfig()
+	go r.watchdogWorker()
+	go r.timerWorker()
+	go r.cleanupWorker()
+	go r.speedTestWorker()
+
+	// 阻塞主線程直到收到 Quit
+	<-r.Quit
+	logWarning("背景引擎已完全停止。")
+}
+
 func (r *Rover) Stop() {
-	r.Quit <- struct{}{}
+	// 透過關閉 channel 廣播停止信號給所有 Worker，加上 select 防止重複 close
+	select {
+	case <-r.Quit:
+	default:
+		close(r.Quit)
+	}
 }
 
 func (r *Rover) ForceCheck() {
+	logInfo("手動測速信號已發送！")
 	select {
 	case r.ManualTrigger <- struct{}{}:
 	default:

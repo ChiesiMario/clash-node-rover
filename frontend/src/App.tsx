@@ -7,6 +7,7 @@ import NodeRanking from './components/NodeRanking';
 import SetupModal from './components/SetupModal';
 import SettingsPage from './components/SettingsPage';
 import logo from './assets/logo.png';
+import { GetSetup } from '../wailsjs/go/main/App';
 
 function App() {
     const { stats, status, groups, fetchStats, fetchStatus, fetchGroups, triggerTest, togglePause, manualSwitch, toggleGroupLock, saveFilter } = useApi();
@@ -17,15 +18,18 @@ function App() {
 
     const fetchSetupStatus = async () => {
         try {
-            const res = await fetch('/api/setup');
-            if (res.ok) {
-                const data = await res.json();
-                setSetupState({ isConfigured: data.is_configured, apiUrl: data.api_url });
-                if (data.is_configured) {
-                    fetchGroups();
-                    fetchStats();
-                    fetchStatus();
+            const data = await GetSetup();
+            setSetupState(prev => {
+                // If it's the first time and not configured, enforce the modal to show
+                if (prev === null && !data.is_configured) {
+                    setShowSetupModal(true);
                 }
+                return { isConfigured: data.is_configured, apiUrl: data.api_url };
+            });
+            if (data.is_configured) {
+                fetchGroups();
+                fetchStats();
+                fetchStatus();
             }
         } catch (err) {
             console.error('Failed to fetch setup status', err);
@@ -58,7 +62,7 @@ function App() {
 
     return (
         <>
-        {setupState && (!setupState.isConfigured || showSetupModal) && (
+        {showSetupModal && setupState && (
             <SetupModal 
                 defaultUrl={setupState.apiUrl} 
                 canCancel={setupState.isConfigured}
@@ -69,7 +73,7 @@ function App() {
                 }} 
             />
         )}
-        <div className="app-layout" style={{ filter: (setupState && !setupState.isConfigured) ? 'blur(4px)' : 'none', pointerEvents: (setupState && !setupState.isConfigured) ? 'none' : 'auto' }}>
+        <div className="app-layout" style={{ filter: (showSetupModal && !setupState?.isConfigured) ? 'blur(4px)' : 'none', pointerEvents: (showSetupModal && !setupState?.isConfigured) ? 'none' : 'auto' }}>
             <aside className="sidebar">
                 <div className="sidebar-header">
                     <div className="brand-icon" style={{background: 'transparent', boxShadow: 'none'}}>
@@ -83,14 +87,14 @@ function App() {
                     <span className="hig-body">總覽</span>
                 </button>
                 
-                <button className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
-                    <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'logs' ? "'FILL' 1" : "'FILL' 0"}}>terminal</span>
-                    <span className="hig-body">系統日誌</span>
-                </button>
-
                 <button className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
                     <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'settings' ? "'FILL' 1" : "'FILL' 0"}}>settings</span>
                     <span className="hig-body">設定</span>
+                </button>
+
+                <button className={`nav-item ${activeTab === 'logs' ? 'active' : ''}`} onClick={() => setActiveTab('logs')}>
+                    <span className="material-symbols-outlined" style={{fontVariationSettings: activeTab === 'logs' ? "'FILL' 1" : "'FILL' 0"}}>article</span>
+                    <span className="hig-body">日誌</span>
                 </button>
 
                 <div className="sidebar-spacer"></div>
@@ -124,21 +128,6 @@ function App() {
                     <NodeRanking stats={stats} />
                 </div>
 
-                <div className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`}>
-                    <div className="hig-title-2" style={{marginBottom: '24px'}}>系統即時日誌</div>
-                    <div className="hig-card" style={{padding: '0', border: 'none'}}>
-                        <div className="console">
-                            {logs.map((log, i) => (
-                                <div key={i} className={`log-line log-${log.level === 'success' ? 'success' : log.level === 'warning' ? 'warning' : log.level === 'error' ? 'error' : 'info'}`}>
-                                    <div className="log-time">[{log.time}]</div>
-                                    <div className="log-badge">{log.level === 'success' ? 'OK' : log.level === 'warning' ? 'WARN' : log.level === 'error' ? 'FAIL' : 'INFO'}</div>
-                                    <div className="log-msg">{log.message.replace(/^[💡✅⚠️❌] /, '')}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-
                 <div className={`tab-content ${activeTab === 'settings' ? 'active' : ''}`}>
                     <SettingsPage 
                         apiConnected={status.api_connected} 
@@ -147,6 +136,36 @@ function App() {
                             fetchSetupStatus();
                         }} 
                     />
+                </div>
+
+                <div className={`tab-content ${activeTab === 'logs' ? 'active' : ''}`}>
+                    <div className="hig-title-2" style={{marginBottom: '24px'}}>系統運行日誌</div>
+                    <div className="hig-card" style={{ padding: '0', overflow: 'hidden' }}>
+                        <div style={{ padding: '16px', backgroundColor: 'var(--hig-bg-secondary)', borderBottom: '1px solid var(--hig-border)' }}>
+                            <span style={{ fontSize: '14px', fontWeight: 600 }}>即時測速紀錄</span>
+                        </div>
+                        <div style={{ padding: '16px', height: '600px', overflowY: 'auto', fontFamily: 'monospace', fontSize: '13px', lineHeight: 1.5, backgroundColor: 'var(--hig-bg-elevated)' }}>
+                            {logs.length === 0 ? (
+                                <div style={{ color: 'var(--hig-text-secondary)', textAlign: 'center', padding: '40px 0' }}>尚無日誌記錄</div>
+                            ) : (
+                                logs.map((log, i) => (
+                                    <div key={i} style={{marginBottom: '6px', display: 'flex', gap: '12px'}}>
+                                        <span style={{color: 'var(--hig-text-secondary)', minWidth: '70px'}}>[{log.time}]</span>
+                                        <span style={{
+                                            color: log.level === 'error' ? 'var(--hig-system-red)' : 
+                                                log.level === 'warning' ? 'var(--hig-system-orange)' : 
+                                                log.level === 'success' ? 'var(--hig-system-green)' : 'var(--hig-system-blue)',
+                                            minWidth: '40px',
+                                            fontWeight: 'bold'
+                                        }}>
+                                            {log.level === 'success' ? 'OK' : log.level === 'warning' ? 'WARN' : log.level === 'error' ? 'FAIL' : 'INFO'}
+                                        </span>
+                                        <span style={{color: 'var(--hig-text-primary)', wordBreak: 'break-all'}}>{log.message.replace(/^[💡✅⚠️❌🛡️🌐🚫] /, '')}</span>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
                 </div>
             </main>
         </div>

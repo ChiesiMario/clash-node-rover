@@ -49,8 +49,7 @@ api_secret: "%s"
 check_interval: %ds
 
 # 要被 Rover 控制與切換節點的 Clash 代理群組名稱 (支援多個群組)
-target_groups:
-  - "🤖 Node Rover"
+target_groups: []
 
 # 專屬的無感測速群組 (Optional，留空則自動借用上述的 target_groups)。
 # 如果設定此群組，Rover 測速時將不再借用你正在上網的群組，達成 100%% 無感背景測速。
@@ -133,7 +132,7 @@ func loadConfig() (*Config, error) {
 			} else if oldCfg.TargetGroup != "" {
 				cfg.TargetGroups = []string{oldCfg.TargetGroup}
 			} else {
-				cfg.TargetGroups = []string{"🤖 Node Rover"}
+				cfg.TargetGroups = []string{}
 			}
 
 			// 寫入帶有註解的 YAML
@@ -176,7 +175,7 @@ func loadConfig() (*Config, error) {
 	}
 	if len(cfg.TargetGroups) == 0 {
 		// 如果 YAML 裡面剛好沒有設定 (可能是舊版 YAML 升級)，則放入預設
-		cfg.TargetGroups = []string{"🤖 Node Rover"}
+		cfg.TargetGroups = []string{}
 	}
 	if cfg.MaxConcurrent <= 0 {
 		cfg.MaxConcurrent = 10
@@ -209,7 +208,7 @@ func promptForConfig() (*Config, error) {
 		APIUrl:              "",
 		APISecret:           "",
 		CheckInterval:       60 * time.Second,
-		TargetGroups:        []string{"🤖 Node Rover"},
+		TargetGroups:        []string{},
 		TestURLs:            []string{"http://www.gstatic.com/generate_204", "http://cp.cloudflare.com/generate_204", "http://www.apple.com/library/test/success.html"},
 		TestTimeout:         5 * time.Second,
 		ToleranceMs:         10,

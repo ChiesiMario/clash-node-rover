@@ -2,9 +2,9 @@ import type { Status } from '../hooks/useApi';
 
 export default function Dashboard({ status, triggerTest, togglePause, apiUrl }: { status: Status, triggerTest: () => void, togglePause: () => void, apiUrl?: string }) {
     let dotColor = 'var(--hig-system-green)';
-    let dotShadow = 'rgba(48, 209, 88, 0.4)';
+    let dotShadow = 'rgba(52, 199, 89, 0.4)';
     let badgeText = '監控中';
-    const isApiReady = status.is_configured !== false && status.api_connected !== false;
+    const isApiReady = status.is_configured !== false && status.api_connected !== false && status.is_ready !== false;
     
     if (status.is_configured === false) {
         dotColor = 'var(--hig-system-red)';
@@ -14,6 +14,10 @@ export default function Dashboard({ status, triggerTest, togglePause, apiUrl }: 
         dotColor = 'var(--hig-system-red)';
         dotShadow = 'rgba(255, 69, 58, 0.4)';
         badgeText = 'API 未連接';
+    } else if (status.is_ready === false) {
+        dotColor = 'var(--hig-system-orange)';
+        dotShadow = 'rgba(255, 159, 10, 0.4)';
+        badgeText = 'API 連接成功，請完成測速設置';
     } else if (status.is_paused) {
         dotColor = 'var(--hig-system-orange)';
         dotShadow = 'rgba(255, 159, 10, 0.4)';
@@ -38,7 +42,7 @@ export default function Dashboard({ status, triggerTest, togglePause, apiUrl }: 
             <div style={{display:'flex', gap:'12px'}}>
                 <button className="btn" onClick={triggerTest} disabled={status.is_running || !isApiReady}>
                     <span className={`material-symbols-outlined ${status.is_running ? 'spin' : ''}`}>
-                        {status.is_running ? 'refresh' : 'speed'}
+                        {status.is_running ? 'progress_activity' : 'speed'}
                     </span>
                     {status.is_running ? '測試中...' : '立即測試'}
                 </button>

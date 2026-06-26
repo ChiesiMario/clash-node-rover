@@ -26,6 +26,13 @@ fn save_config(app: AppHandle, state: tauri::State<AppState>, new_config: Config
     config::save_config(&app, &new_config)
 }
 
+#[tauri::command]
+async fn get_clash_selectors(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    let config = state.config.lock().unwrap().clone();
+    let api = clash::ClashApi::new(&config.api_url, &config.api_secret);
+    api.get_selectors().await
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -83,7 +90,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             get_config,
-            save_config
+            save_config,
+            get_clash_selectors
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

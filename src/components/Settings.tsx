@@ -5,6 +5,7 @@ import { Save } from "lucide-react";
 export function Settings() {
   const [config, setConfig] = useState<any>(null);
   const [saving, setSaving] = useState(false);
+  const [availableGroups, setAvailableGroups] = useState<string[]>([]);
 
   useEffect(() => {
     invoke("get_config").then((cfg) => setConfig(cfg));
@@ -63,6 +64,61 @@ export function Settings() {
                 placeholder="Enter secret"
               />
             </div>
+          </div>
+        </div>
+
+        <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium">Monitored Groups</h2>
+            <button
+              onClick={async () => {
+                try {
+                  const groups = await invoke<string[]>("get_clash_selectors");
+                  setAvailableGroups(groups);
+                } catch (e: any) {
+                  alert("Failed to fetch groups: " + e);
+                }
+              }}
+              className="text-xs bg-secondary text-secondary-foreground px-3 py-1.5 rounded-md hover:bg-secondary/80 font-medium transition-colors"
+            >
+              Fetch Groups
+            </button>
+          </div>
+          
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Select which Clash proxy groups the watchdog should monitor and speed-test.</p>
+            
+            {availableGroups.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                {availableGroups.map(group => (
+                  <label key={group} className="flex items-center space-x-3 p-3 border rounded-lg hover:bg-muted/50 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={config.target_groups.includes(group)}
+                      onChange={(e) => {
+                        const newGroups = e.target.checked
+                          ? [...config.target_groups, group]
+                          : config.target_groups.filter((g: string) => g !== group);
+                        setConfig({ ...config, target_groups: newGroups });
+                      }}
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                    />
+                    <span className="text-sm font-medium">{group}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={config.target_groups.join(", ")}
+                  onChange={(e) => setConfig({ ...config, target_groups: e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean) })}
+                  className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="e.g. PROXIES, FALLBACK"
+                />
+                <p className="text-xs text-muted-foreground">Comma separated list of groups. Click "Fetch Groups" to select from Clash API.</p>
+              </div>
+            )}
           </div>
         </div>
 

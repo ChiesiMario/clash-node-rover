@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { listen } from "@tauri-apps/api/event";
-import { CheckCircle2, XCircle, Clock } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { CheckCircle2, XCircle, Clock, Play, Loader2 } from "lucide-react";
 import { NodeRanking } from "./NodeRanking";
 
 interface AppStatus {
@@ -67,8 +68,27 @@ export function Dashboard() {
             <h3 className="font-medium text-sm text-muted-foreground">Next Check</h3>
             <Clock className="w-5 h-5 text-blue-500" />
           </div>
-          <div className="text-2xl font-semibold tabular-nums">
-            {status.next_check_in > 0 ? `${status.next_check_in}s` : "--"}
+          <div className="flex items-center justify-between">
+            <div className="text-2xl font-semibold tabular-nums">
+              {status.next_check_in > 0 ? `${status.next_check_in}s` : "--"}
+            </div>
+            <button
+              onClick={() => invoke("force_test")}
+              disabled={status.is_testing || !status.api_connected}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {status.is_testing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Testing...
+                </>
+              ) : (
+                <>
+                  <Play className="w-3.5 h-3.5" />
+                  Test Now
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

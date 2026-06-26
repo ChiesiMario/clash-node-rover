@@ -15,10 +15,11 @@ pub fn start_watchdog(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
             // 讀取最新的 config
-            let config = {
+            let (config, force_test) = {
                 let state = app.state::<AppState>();
                 let c = state.config.lock().unwrap().clone();
-                c
+                let f = state.force_test.clone();
+                (c, f)
             };
 
             if config.api_url.is_empty() {
@@ -161,8 +162,14 @@ pub fn start_watchdog(app: AppHandle) {
             while remaining > 0 {
                 status.next_check_in = remaining;
                 let _ = app.emit("status_update", &status);
-                sleep(Duration::from_secs(1)).await;
-                remaining -= 1;
+                tokio::select! {
+                    _ = force_test.notified() => {
+                        break;
+                    }
+                    _ = sleep(Duration::from_secs(1)) => {
+                        remaining -= 1;
+                    }
+                }
             }
         }
     });

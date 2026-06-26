@@ -9,10 +9,12 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 use config::Config;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 
 struct AppState {
     pub config: Mutex<Config>,
+    pub force_test: Arc<Notify>,
 }
 
 #[tauri::command]
@@ -33,6 +35,16 @@ async fn get_clash_selectors(state: tauri::State<'_, AppState>) -> Result<Vec<St
     api.get_selectors().await
 }
 
+#[tauri::command]
+fn force_test(state: tauri::State<AppState>) {
+    state.force_test.notify_one();
+}
+
+#[tauri::command]
+fn get_logs(state: tauri::State<db::Db>) -> Vec<db::LogEntry> {
+    state.get_logs(100)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -47,6 +59,7 @@ pub fn run() {
 
             app.manage(AppState {
                 config: Mutex::new(cfg),
+                force_test: Arc::new(Notify::new()),
             });
             
             // 啟動背景測速守門員
@@ -91,7 +104,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
-            get_clash_selectors
+            get_clash_selectors,
+            force_test,
+            get_logs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

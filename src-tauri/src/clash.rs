@@ -26,6 +26,19 @@ pub struct ProxyDetail {
 }
 
 #[derive(Deserialize, Debug)]
+pub struct ProvidersResponse {
+    pub providers: std::collections::HashMap<String, ProviderDetail>,
+}
+
+#[derive(Deserialize, Debug)]
+pub struct ProviderDetail {
+    pub name: String,
+    pub proxies: Vec<ProxyDetail>,
+    #[serde(rename = "vehicleType")]
+    pub vehicle_type: String,
+}
+
+#[derive(Deserialize, Debug)]
 pub struct DelayResponse {
     pub delay: u64,
 }
@@ -82,6 +95,16 @@ impl ClashApi {
         }
         let detail: ProxyDetail = resp.json().await.map_err(|e| e.to_string())?;
         Ok(detail)
+    }
+
+    pub async fn get_providers(&self) -> Result<std::collections::HashMap<String, ProviderDetail>, String> {
+        let url = format!("{}/providers/proxies", self.base_url);
+        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        if !resp.status().is_success() {
+            return Err(format!("Providers API returned status: {}", resp.status()));
+        }
+        let data: ProvidersResponse = resp.json().await.map_err(|e| e.to_string())?;
+        Ok(data.providers)
     }
 
     pub async fn select_proxy(&self, group_name: &str, proxy_name: &str) -> Result<(), String> {

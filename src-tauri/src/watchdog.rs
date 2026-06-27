@@ -18,6 +18,7 @@ pub struct NodeResult {
     pub mean: Option<u64>,
     pub jitter: Option<u64>,
     pub is_active: bool,
+    pub provider: Option<String>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -81,7 +82,7 @@ pub fn start_watchdog(app: AppHandle) {
 
             let mut all_group_results: Vec<GroupResult> = Vec::new();
 
-            // 階段一：收集所有目標群組的節點資料
+            // 階段一：收集所有目標群組的節點資料與代理集對應
             use std::collections::{HashSet, HashMap};
             struct GroupInfo {
                 group_name: String,
@@ -90,6 +91,18 @@ pub fn start_watchdog(app: AppHandle) {
             }
             let mut groups_info = Vec::new();
             let mut unique_nodes = HashSet::new();
+            
+            // 抓取所有的 Providers 來建立 Node -> Provider 映射表
+            let mut node_to_provider: HashMap<String, String> = HashMap::new();
+            if let Ok(providers) = clash.get_providers().await {
+                for (prov_name, prov_detail) in providers {
+                    if prov_name != "default" {
+                        for proxy in prov_detail.proxies {
+                            node_to_provider.insert(proxy.name, prov_name.clone());
+                        }
+                    }
+                }
+            }
 
             for group in &config.target_groups {
                 if let Ok(detail) = clash.get_proxy_group(group).await {
@@ -122,6 +135,7 @@ pub fn start_watchdog(app: AppHandle) {
                         mean: None,
                         jitter: None,
                         is_active: node == &info.current_node,
+                        provider: node_to_provider.get(node).cloned(),
                     });
                 }
                 initial_group_results.push(GroupResult {
@@ -220,6 +234,7 @@ pub fn start_watchdog(app: AppHandle) {
                         mean: mean_opt,
                         jitter: jitter_opt,
                         is_active: node == current_node,
+                        provider: node_to_provider.get(node).cloned(),
                     });
                 }
                 
@@ -232,13 +247,18 @@ pub fn start_watchdog(app: AppHandle) {
                     }
                 });
 
+                let get_display_name = |n: &str| -> String {
+                    node_to_provider.get(n).map(|p| format!("[{}] {}", p, n)).unwrap_or_else(|| n.to_string())
+                };
+
                 let mut debug_msgs = Vec::new();
                 let top_n = std::cmp::min(10, final_results.len());
                 for res in final_results.iter().take(top_n) {
+                    let display_name = get_display_name(&res.name);
                     if let (Some(s), Some(m), Some(j)) = (res.delay, res.mean, res.jitter) {
-                        debug_msgs.push(format!("  - {}: Score {} (Mean: {}ms, Jitter: {}ms)", res.name, s, m, j));
+                        debug_msgs.push(format!("  - {}: Score {} (Mean: {}ms, Jitter: {}ms)", display_name, s, m, j));
                     } else {
-                        debug_msgs.push(format!("  - {}: Timeout", res.name));
+                        debug_msgs.push(format!("  - {}: Timeout", display_name));
                     }
                 }
                 
@@ -250,9 +270,10 @@ pub fn start_watchdog(app: AppHandle) {
 
                 let current_delay_str = if current_node_delay == u64::MAX { "Timeout".to_string() } else { format!("{}ms", current_node_delay) };
                 let min_delay_str = if min_delay == u64::MAX { "Timeout".to_string() } else { format!("{}ms", min_delay) };
-                let fastest_node_str = fastest_node.clone().unwrap_or_else(|| "None".to_string());
+                let fastest_node_str = fastest_node.as_ref().map(|n| get_display_name(n)).unwrap_or_else(|| "None".to_string());
+                let current_node_str = get_display_name(current_node);
 
-                db.insert_log("DEBUG", &format!("群組 [{}] 決策變數: current={}, current_delay={}, fastest={}, min_delay={}", group, current_node, current_delay_str, fastest_node_str, min_delay_str));
+                db.insert_log("DEBUG", &format!("群組 [{}] 決策變數: current={}, current_delay={}, fastest={}, min_delay={}", group, current_node_str, current_delay_str, fastest_node_str, min_delay_str));
                 
                 // Jitter 容忍度邏輯判斷
                 let is_locked = config.locked_groups.contains(group);
@@ -270,18 +291,18 @@ pub fn start_watchdog(app: AppHandle) {
                         // 超過容忍度，進行切換
                         if let Ok(_) = clash.select_proxy(group, &fastest).await {
                             let advantage_str = if diff == u64::MAX { "當前節點超時".to_string() } else { format!("優勢 {} 分", diff) };
-                            db.insert_log("INFO", &format!("群組 [{}] 切換至最快節點: {} ({})", group, fastest, advantage_str));
+                            db.insert_log("INFO", &format!("群組 [{}] 切換至最快節點: {} ({})", group, get_display_name(&fastest), advantage_str));
                             
                             // Update the active node in our emitted results to reflect the switch
                             for res in &mut final_results {
                                 res.is_active = res.name == fastest;
                             }
                         } else {
-                            db.insert_log("ERROR", &format!("群組 [{}] 切換至 {} 失敗", group, fastest));
+                            db.insert_log("ERROR", &format!("群組 [{}] 切換至 {} 失敗", group, get_display_name(&fastest)));
                         }
                     } else {
                         // 在容忍度內，保持當前節點
-                        db.insert_log("INFO", &format!("群組 [{}] 保持當前節點: {} (與最佳差距 {} 分，容忍度內)", group, current_node, diff));
+                        db.insert_log("INFO", &format!("群組 [{}] 保持當前節點: {} (與最佳差距 {} 分，容忍度內)", group, current_node_str, diff));
                     }
                 } else {
                     db.insert_log("WARN", &format!("群組 [{}] 所有節點皆無回應 (Timeout: {}ms)", group, config.test_timeout));

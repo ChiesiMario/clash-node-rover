@@ -11,6 +11,14 @@ export interface AppStatus {
   next_check_in: number;
 }
 
+export interface NodeResult {
+  name: string;
+  latency?: number;
+  jitter?: number;
+  is_active: boolean;
+  provider?: string;
+}
+
 interface DashboardProps {
   status: AppStatus | null;
 }
@@ -54,6 +62,7 @@ export function Dashboard({ status }: DashboardProps) {
         <div className="p-6 rounded-xl border border-border bg-muted/30 shadow-sm space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">Engine State</h3>
+
             <ActivityIcon isTesting={status.is_testing} />
           </div>
           <div className="text-2xl font-semibold">

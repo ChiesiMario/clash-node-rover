@@ -7,8 +7,9 @@ interface NodeResult {
   name: string;
   delay: number | null; // This is the Score now
   mean?: number | null;
-  jitter?: number | null;
+  jitter?: number;
   is_active: boolean;
+  provider?: string;
 }
 
 interface GroupResult {
@@ -53,14 +54,14 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
     }
   };
 
-  const handleManualSwitch = async (groupName: string) => {
-    const node = selectedNodes[groupName];
-    if (!node) return;
+  const handleManualSwitch = async (groupName: string, nodeName: string) => {
+    if (!nodeName) return;
     try {
-      await invoke("manual_switch", { group: groupName, node });
+      await invoke("manual_switch", { group: groupName, node: nodeName });
       setGroups((prev) =>
         prev.map((g) => (g.group_name === groupName ? { ...g, is_locked: true } : g))
       );
+      setSelectedNodes((prev) => ({ ...prev, [groupName]: nodeName }));
     } catch (error) {
       console.error("Failed to switch node:", error);
     }
@@ -78,6 +79,9 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
   const allNodesMap = new Map<string, {
     name: string;
     delay: number | null;
+    mean?: number | null;
+    jitter?: number;
+    provider?: string;
     activeInGroups: string[];
   }>();
 
@@ -89,6 +93,7 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
           delay: node.delay,
           mean: node.mean,
           jitter: node.jitter,
+          provider: node.provider,
           activeInGroups: []
         });
       }
@@ -122,46 +127,65 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="font-semibold truncate">{group.group_name}</h3>
-                    <button
-                      onClick={() => handleToggleLock(group.group_name, group.is_locked)}
-                      className={`p-1.5 rounded-md transition-colors shrink-0 ${
-                        group.is_locked
-                          ? "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"
-                          : "bg-background/50 hover:bg-background text-muted-foreground border"
-                      }`}
-                      title={group.is_locked ? "解鎖群組 (允許自動切換)" : "鎖定群組 (停止自動切換)"}
-                    >
-                      {group.is_locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                    </button>
                   </div>
-                  <div className="text-sm text-muted-foreground flex items-center gap-1.5">
-                    <Zap className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                    <span className="text-foreground font-medium truncate">{activeNode ? activeNode.name : "None"}</span>
+                  <div className="flex flex-col gap-1 flex-1 min-w-0">
+                    <div className="text-sm text-muted-foreground flex items-center gap-1.5">
+                      <Zap className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
+                      <div className="font-medium text-sm truncate text-foreground flex-1">
+                        {activeNode ? activeNode.name : "None"}
+                      </div>
+                    </div>
+                    {activeNode?.provider && (
+                      <div className="flex pl-5">
+                        <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md truncate max-w-full border border-border/50">
+                          {activeNode.provider}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 w-full pt-3 mt-1 border-t border-border/50">
-                  <select
-                    className="bg-background border border-border rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-primary flex-1 min-w-0 truncate"
-                    value={currentValue}
-                    onChange={(e) =>
-                      setSelectedNodes((prev) => ({ ...prev, [group.group_name]: e.target.value }))
-                    }
-                  >
-                    {group.nodes.map((node) => (
-                      <option key={node.name} value={node.name}>
-                        {node.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => handleManualSwitch(group.group_name)}
-                    disabled={!currentValue}
-                    className="flex items-center justify-center shrink-0 w-8 h-8 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
-                    title="確認切換"
-                  >
-                    <Check className="w-4 h-4" />
-                  </button>
+                <div className="flex flex-col gap-3 pt-3 mt-1 border-t border-border/50">
+                  {/* Mode Toggle Buttons */}
+                  <div className="flex bg-background/50 p-1 rounded-lg border border-border">
+                    <button
+                      onClick={() => group.is_locked && handleToggleLock(group.group_name, true)}
+                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                        !group.is_locked 
+                          ? "bg-background shadow-sm text-foreground" 
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      }`}
+                    >
+                      自動切換
+                    </button>
+                    <button
+                      onClick={() => !group.is_locked && handleToggleLock(group.group_name, false)}
+                      className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                        group.is_locked 
+                          ? "bg-background shadow-sm text-amber-600 dark:text-amber-500" 
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      }`}
+                    >
+                      手動切換
+                    </button>
+                  </div>
+
+                  {/* Manual Selection Dropdown */}
+                  {group.is_locked && (
+                    <div className="flex items-center gap-2 w-full animate-in slide-in-from-top-2 duration-200 fade-in">
+                      <select
+                        className="bg-background border border-border rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500/50 flex-1 min-w-0 truncate transition-colors cursor-pointer hover:border-border/80"
+                        value={currentValue}
+                        onChange={(e) => handleManualSwitch(group.group_name, e.target.value)}
+                      >
+                        {group.nodes.map((node) => (
+                          <option key={node.name} value={node.name}>
+                            {node.provider ? `[${node.provider}] ` : ""}{node.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -211,8 +235,17 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                         />
                       </div>
                     </td>
-                    <td className={`px-4 py-3 font-medium ${node.activeInGroups.length > 0 ? "text-primary" : "text-foreground"}`}>
-                      {node.name}
+                    <td className={`px-4 py-3 min-w-[200px] max-w-[400px] font-medium ${node.activeInGroups.length > 0 ? "text-primary" : "text-foreground"}`}>
+                      <div className="flex flex-col gap-1.5">
+                        <span className="truncate">{node.name}</span>
+                        {node.provider && (
+                          <div className="flex">
+                            <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md truncate max-w-full border border-border/50 whitespace-nowrap">
+                              {node.provider}
+                            </span>
+                          </div>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 font-mono">
                       {node.delay === null ? (

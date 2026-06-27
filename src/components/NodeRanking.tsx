@@ -258,10 +258,9 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                     </td>
                     <td className="px-4 py-3">
                       {node.activeInGroups.length > 0 ? (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                        <div className="flex flex-wrap gap-1.5">
                           {node.activeInGroups.map(g => (
-                            <span key={g} className="text-[10px] font-semibold tracking-wider uppercase px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+                            <span key={g} className="text-[11px] font-medium px-2 py-1 rounded-md bg-primary/10 text-primary">
                               {g}
                             </span>
                           ))}

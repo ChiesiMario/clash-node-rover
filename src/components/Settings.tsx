@@ -146,6 +146,17 @@ export function Settings() {
                 placeholder="2000"
               />
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Max Concurrency</label>
+              <input
+                type="number"
+                value={config.max_concurrent}
+                onChange={(e) => setConfig({ ...config, max_concurrent: parseInt(e.target.value) || 10 })}
+                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="10"
+              />
+              <p className="text-xs text-muted-foreground">Maximum number of simultaneous ping requests to send.</p>
+            </div>
           </div>
         </div>
       </div>

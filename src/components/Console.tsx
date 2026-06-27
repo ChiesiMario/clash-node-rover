@@ -11,6 +11,7 @@ interface LogEntry {
 
 export function Console() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [showDebugLogs, setShowDebugLogs] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export function Console() {
       case "INFO": return "text-emerald-400";
       case "WARN": return "text-amber-400";
       case "ERROR": return "text-rose-400";
+      case "DEBUG": return "text-purple-400";
       default: return "text-gray-400";
     }
   };
@@ -48,20 +50,28 @@ export function Console() {
 
   return (
     <div className="h-full flex flex-col p-8 max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">System Logs</h1>
-        <p className="text-muted-foreground">Detailed execution traces from the background engine.</p>
+      <div className="flex justify-between items-end">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold tracking-tight">System Logs</h1>
+          <p className="text-muted-foreground">Detailed execution traces from the background engine.</p>
+        </div>
+        <button
+          onClick={() => setShowDebugLogs(!showDebugLogs)}
+          className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${showDebugLogs ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-gray-800 text-gray-400 border border-gray-700 hover:bg-gray-700'}`}
+        >
+          {showDebugLogs ? "Hide Debug Logs" : "Show Debug Logs"}
+        </button>
       </div>
 
       <div ref={scrollRef} className="flex-1 bg-[#0c0c0c] border border-border rounded-xl shadow-inner p-4 font-mono text-sm text-gray-300 overflow-auto flex flex-col gap-2">
-        {logs.map((log) => (
+        {logs.filter(log => showDebugLogs || log.level !== "DEBUG").map((log) => (
           <div key={log.id} className="flex gap-4">
             <span className="text-blue-400 whitespace-nowrap">{formatTime(log.timestamp)}</span>
             <span className={`whitespace-nowrap ${getLevelColor(log.level)}`}>[{log.level}]</span>
-            <span className="break-all">{log.message}</span>
+            <span className="whitespace-pre-wrap break-words">{log.message}</span>
           </div>
         ))}
-        {logs.length === 0 && (
+        {logs.filter(log => showDebugLogs || log.level !== "DEBUG").length === 0 && (
           <div className="opacity-50 flex gap-4">
             <span>No logs available yet.</span>
           </div>

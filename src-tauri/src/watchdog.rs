@@ -9,6 +9,7 @@ pub struct AppStatus {
     pub api_connected: bool,
     pub is_testing: bool,
     pub next_check_in: u64,
+    pub is_paused: bool,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -116,7 +117,12 @@ pub fn start_watchdog(app: AppHandle) {
                 api_connected: false,
                 is_testing: false,
                 next_check_in: 0,
+                is_paused: false,
             };
+
+            if let Ok(current_status) = app.state::<AppState>().status.lock() {
+                status.is_paused = current_status.is_paused;
+            }
 
             let db = app.state::<Db>();
             
@@ -136,6 +142,15 @@ pub fn start_watchdog(app: AppHandle) {
 
             if !status.api_connected {
                 sleep(Duration::from_secs(3)).await;
+                continue;
+            }
+
+            if status.is_paused {
+                db.insert_log("INFO", "全局暫停中，跳過本次測速...");
+                // Emit status with next_check_in = 0 to show -- on UI
+                status.next_check_in = 0;
+                let _ = app.emit("status_update", &status);
+                sleep(Duration::from_secs(5)).await;
                 continue;
             }
 
@@ -306,8 +321,6 @@ pub fn start_watchdog(app: AppHandle) {
                 let selected_regions = config.group_regions.get(group).cloned().unwrap_or_default();
                 let has_region_filter = !selected_regions.is_empty();
 
-                let mut fastest_node = None;
-                let mut min_delay = u64::MAX;
                 let mut current_node_delay = u64::MAX;
 
                 let mut final_results: Vec<NodeResult> = Vec::new();
@@ -330,10 +343,6 @@ pub fn start_watchdog(app: AppHandle) {
                             if has_region_filter && !is_region_matched {
                                 current_node_delay = u64::MAX; // 若當前節點不符合篩選地區，強制視為失效以觸發切換
                             }
-                        }
-                        if is_region_matched && delay < min_delay {
-                            min_delay = delay;
-                            fastest_node = Some(node.clone());
                         }
                     }
 

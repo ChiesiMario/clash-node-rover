@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { CheckCircle2, XCircle, Clock, Play, Loader2 } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Play, Loader2, Pause, PauseCircle } from "lucide-react";
 import { NodeRanking } from "./NodeRanking";
 
 export interface AppStatus {
   api_connected: boolean;
   is_testing: boolean;
   next_check_in: number;
+  is_paused: boolean;
 }
 
 export interface NodeResult {
@@ -24,6 +25,16 @@ interface DashboardProps {
 }
 
 export function Dashboard({ status }: DashboardProps) {
+  const [apiUrl, setApiUrl] = useState<string>("");
+
+  useEffect(() => {
+    invoke<any>("get_config").then((cfg) => {
+      if (cfg && cfg.api_url) {
+        setApiUrl(cfg.api_url);
+      }
+    }).catch(console.error);
+  }, []);
+
   if (!status) {
     return (
       <div className="p-8 max-w-4xl mx-auto space-y-8 flex items-center justify-center min-h-[50vh]">
@@ -37,9 +48,31 @@ export function Dashboard({ status }: DashboardProps) {
 
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight">System Status</h1>
-        <p className="text-muted-foreground">Monitor your proxy nodes in real-time.</p>
+      <div className="flex items-start justify-between">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-semibold tracking-tight">System Status</h1>
+          <p className="text-muted-foreground">Monitor your proxy nodes in real-time.</p>
+        </div>
+        <button
+          onClick={() => invoke("toggle_pause")}
+          className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+            status.is_paused 
+              ? "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400" 
+              : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+          }`}
+        >
+          {status.is_paused ? (
+            <>
+              <Play className="w-4 h-4 fill-current" />
+              Resume Engine
+            </>
+          ) : (
+            <>
+              <Pause className="w-4 h-4 fill-current" />
+              Pause Engine
+            </>
+          )}
+        </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -53,8 +86,15 @@ export function Dashboard({ status }: DashboardProps) {
               <XCircle className="w-5 h-5 text-rose-500" />
             )}
           </div>
-          <div className="text-2xl font-semibold">
-            {status.api_connected ? "Connected" : "Disconnected"}
+          <div className="flex flex-col">
+            <div className="text-2xl font-semibold">
+              {status.api_connected ? "Connected" : "Disconnected"}
+            </div>
+            {status.api_connected && apiUrl && (
+              <span className="text-sm font-medium text-muted-foreground/70 mt-0.5 tracking-tight font-mono">
+                {apiUrl}
+              </span>
+            )}
           </div>
         </div>
 
@@ -63,10 +103,10 @@ export function Dashboard({ status }: DashboardProps) {
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">Engine State</h3>
 
-            <ActivityIcon isTesting={status.is_testing} />
+            <ActivityIcon isTesting={status.is_testing} isPaused={status.is_paused} />
           </div>
           <div className="text-2xl font-semibold">
-            {status.is_testing ? "Testing Nodes..." : "Standby"}
+            {status.is_paused ? "Paused" : status.is_testing ? "Testing Nodes..." : "Standby"}
           </div>
         </div>
 
@@ -80,23 +120,25 @@ export function Dashboard({ status }: DashboardProps) {
             <div className="text-2xl font-semibold tabular-nums">
               {status.next_check_in > 0 ? `${status.next_check_in}s` : "--"}
             </div>
-            <button
-              onClick={() => invoke("force_test")}
-              disabled={status.is_testing || !status.api_connected}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {status.is_testing ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Testing...
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5" />
-                  Test Now
-                </>
-              )}
-            </button>
+            {!status.is_paused && (
+              <button
+                onClick={() => invoke("force_test")}
+                disabled={status.is_testing || !status.api_connected}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {status.is_testing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5" />
+                    Test Now
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -106,12 +148,15 @@ export function Dashboard({ status }: DashboardProps) {
   );
 }
 
-function ActivityIcon({ isTesting }: { isTesting: boolean }) {
+function ActivityIcon({ isTesting, isPaused }: { isTesting: boolean, isPaused: boolean }) {
+  if (isPaused) {
+    return <PauseCircle className="w-5 h-5 text-amber-500" />;
+  }
   if (isTesting) {
     return (
       <div className="relative flex h-5 w-5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-        <span className="relative inline-flex rounded-full h-5 w-5 bg-amber-500"></span>
+        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+        <span className="relative inline-flex rounded-full h-5 w-5 bg-blue-500"></span>
       </div>
     );
   }

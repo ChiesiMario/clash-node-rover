@@ -4,7 +4,7 @@ mod clash;
 mod watchdog;
 
 use tauri::{
-    AppHandle, Manager,
+    AppHandle, Manager, Emitter,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
@@ -110,6 +110,14 @@ async fn manual_switch(app: tauri::AppHandle, state: tauri::State<'_, AppState>,
     Ok(())
 }
 
+#[tauri::command]
+fn toggle_pause(app: tauri::AppHandle, state: tauri::State<AppState>) {
+    let mut status = state.status.lock().unwrap();
+    status.is_paused = !status.is_paused;
+    let _ = app.emit("status_update", &*status);
+    state.force_test.notify_one(); // Wake up the watchdog if it's sleeping so it can pause immediately or resume immediately
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -130,6 +138,7 @@ pub fn run() {
                     api_connected: false,
                     is_testing: false,
                     next_check_in: 0,
+                    is_paused: false,
                 }),
             });
             
@@ -182,7 +191,8 @@ pub fn run() {
             toggle_group_region,
             manual_switch,
             get_latest_results,
-            get_status
+            get_status,
+            toggle_pause
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

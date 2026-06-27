@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Zap, WifiOff, Star, Lock, Unlock, Check } from "lucide-react";
+import { Zap, WifiOff, Star, Lock, Unlock, Check, Loader2 } from "lucide-react";
 
 interface NodeResult {
   name: string;
@@ -17,7 +17,11 @@ interface GroupResult {
   is_locked: boolean;
 }
 
-export function NodeRanking() {
+interface NodeRankingProps {
+  isTesting?: boolean;
+}
+
+export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
   const [groups, setGroups] = useState<GroupResult[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<Record<string, string>>({});
 
@@ -103,7 +107,7 @@ export function NodeRanking() {
   });
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-500">
+    <div className="space-y-8 animate-in fade-in duration-300">
       
       {/* Groups Section */}
       <div className="space-y-3">
@@ -195,7 +199,9 @@ export function NodeRanking() {
                         <div
                           className={`w-2.5 h-2.5 rounded-full ${
                             node.delay === null
-                              ? "bg-rose-500/50"
+                              ? isTesting 
+                                ? "bg-muted-foreground/50 animate-pulse" 
+                                : "bg-rose-500/50"
                               : node.delay < 150
                               ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
                               : node.delay < 300
@@ -210,10 +216,17 @@ export function NodeRanking() {
                     </td>
                     <td className="px-4 py-3 font-mono">
                       {node.delay === null ? (
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          <WifiOff className="w-3.5 h-3.5" />
-                          <span>Timeout</span>
-                        </div>
+                        isTesting ? (
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Testing...</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <WifiOff className="w-3.5 h-3.5" />
+                            <span>Timeout</span>
+                          </div>
+                        )
                       ) : (
                         <div className="flex items-center gap-1.5">
                           <Zap

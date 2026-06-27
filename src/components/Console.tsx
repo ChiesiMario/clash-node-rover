@@ -49,7 +49,7 @@ export function Console() {
   };
 
   return (
-    <div className="h-full flex flex-col p-8 max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="h-full flex flex-col p-8 max-w-5xl mx-auto space-y-6 animate-in fade-in duration-300">
       <div className="flex justify-between items-end">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight">System Logs</h1>

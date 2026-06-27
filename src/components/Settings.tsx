@@ -24,7 +24,7 @@ export function Settings() {
   if (!config) return <div className="p-8 text-muted-foreground">Loading settings...</div>;
 
   return (
-    <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-300">
       <div className="space-y-2 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-semibold tracking-tight">Configuration</h1>

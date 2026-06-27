@@ -1,12 +1,30 @@
 
 import * as Tabs from "@radix-ui/react-tabs";
 import { Activity, Settings2, TerminalSquare } from "lucide-react";
-import { Dashboard } from "./components/Dashboard";
+import { Dashboard, AppStatus } from "./components/Dashboard";
 import { Settings } from "./components/Settings";
 import { Console } from "./components/Console";
 import "./App.css";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 function App() {
+  const [status, setStatus] = useState<AppStatus | null>(null);
+
+  useEffect(() => {
+    invoke<AppStatus>("get_status").then((initialStatus) => {
+      setStatus(initialStatus);
+    }).catch(console.error);
+
+    const unlisten = listen<AppStatus>("status_update", (event) => {
+      setStatus(event.payload);
+    });
+
+    return () => {
+      unlisten.then((f) => f());
+    };
+  }, []);
   return (
     <div className="flex flex-col h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground">
       <Tabs.Root defaultValue="dashboard" className="flex flex-col h-full">
@@ -35,13 +53,13 @@ function App() {
         </Tabs.List>
 
         <div className="flex-1 overflow-auto">
-          <Tabs.Content value="dashboard" className="h-full focus:outline-none">
-            <Dashboard />
+          <Tabs.Content value="dashboard" className="h-full focus:outline-none data-[state=inactive]:hidden" forceMount>
+            <Dashboard status={status} />
           </Tabs.Content>
-          <Tabs.Content value="settings" className="h-full focus:outline-none">
+          <Tabs.Content value="settings" className="h-full focus:outline-none data-[state=inactive]:hidden" forceMount>
             <Settings />
           </Tabs.Content>
-          <Tabs.Content value="console" className="h-full focus:outline-none">
+          <Tabs.Content value="console" className="h-full focus:outline-none data-[state=inactive]:hidden" forceMount>
             <Console />
           </Tabs.Content>
         </div>

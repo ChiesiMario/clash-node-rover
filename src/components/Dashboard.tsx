@@ -5,35 +5,30 @@ import { invoke } from "@tauri-apps/api/core";
 import { CheckCircle2, XCircle, Clock, Play, Loader2 } from "lucide-react";
 import { NodeRanking } from "./NodeRanking";
 
-interface AppStatus {
+export interface AppStatus {
   api_connected: boolean;
   is_testing: boolean;
   next_check_in: number;
 }
 
-export function Dashboard() {
-  const [status, setStatus] = useState<AppStatus>({
-    api_connected: false,
-    is_testing: false,
-    next_check_in: 0,
-  });
+interface DashboardProps {
+  status: AppStatus | null;
+}
 
-  useEffect(() => {
-    invoke<AppStatus>("get_status").then((initialStatus) => {
-      setStatus(initialStatus);
-    }).catch(console.error);
-
-    const unlisten = listen<AppStatus>("status_update", (event) => {
-      setStatus(event.payload);
-    });
-
-    return () => {
-      unlisten.then((f) => f());
-    };
-  }, []);
+export function Dashboard({ status }: DashboardProps) {
+  if (!status) {
+    return (
+      <div className="p-8 max-w-4xl mx-auto space-y-8 flex items-center justify-center min-h-[50vh]">
+        <div className="flex flex-col items-center gap-4 text-muted-foreground">
+          <Loader2 className="w-8 h-8 animate-spin" />
+          <p>Connecting to background engine...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="p-8 max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300">
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">System Status</h1>
         <p className="text-muted-foreground">Monitor your proxy nodes in real-time.</p>
@@ -41,7 +36,7 @@ export function Dashboard() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Status Card 1: Connection */}
-        <div className="p-6 rounded-xl border border-border bg-card shadow-sm space-y-4">
+        <div className="p-6 rounded-xl border border-border bg-muted/30 shadow-sm space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">API Connection</h3>
             {status.api_connected ? (
@@ -56,7 +51,7 @@ export function Dashboard() {
         </div>
 
         {/* Status Card 2: Engine State */}
-        <div className="p-6 rounded-xl border border-border bg-card shadow-sm space-y-4">
+        <div className="p-6 rounded-xl border border-border bg-muted/30 shadow-sm space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">Engine State</h3>
             <ActivityIcon isTesting={status.is_testing} />
@@ -67,7 +62,7 @@ export function Dashboard() {
         </div>
 
         {/* Status Card 3: Next Check */}
-        <div className="p-6 rounded-xl border border-border bg-card shadow-sm space-y-4">
+        <div className="p-6 rounded-xl border border-border bg-muted/30 shadow-sm space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">Next Check</h3>
             <Clock className="w-5 h-5 text-blue-500" />
@@ -97,7 +92,7 @@ export function Dashboard() {
         </div>
       </div>
 
-      <NodeRanking />
+      <NodeRanking isTesting={status.is_testing} />
     </div>
   );
 }

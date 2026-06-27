@@ -26,6 +26,22 @@ pub struct GroupResult {
     pub group_name: String,
     pub nodes: Vec<NodeResult>,
     pub is_locked: bool,
+    pub selected_regions: Vec<String>,
+}
+
+fn matches_region(node_name: &str, region: &str) -> bool {
+    let lower = node_name.to_lowercase();
+    let keywords = match region {
+        "US" => vec!["us", "united states", "美國", "美国", "洛杉磯", "洛杉矶", "波特蘭", "波特兰", "聖何塞", "圣何塞", "西雅圖", "西雅图", "芝加哥", "紐約", "纽约"],
+        "JP" => vec!["jp", "japan", "日本", "東京", "东京", "大阪", "川崎"],
+        "HK" => vec!["hk", "hong kong", "香港", "深港"],
+        "SG" => vec!["sg", "singapore", "新加坡", "獅城", "狮城"],
+        "TW" => vec!["tw", "taiwan", "台灣", "台湾", "台北", "彰化", "新北", "中華電信", "中华电信"],
+        "KR" => vec!["kr", "korea", "韓國", "韩国", "首爾", "首尔"],
+        "UK" => vec!["uk", "united kingdom", "英國", "英国", "倫敦", "伦敦"],
+        _ => vec![],
+    };
+    keywords.iter().any(|k| lower.contains(k))
 }
 
 pub fn start_watchdog(app: AppHandle) {
@@ -158,6 +174,7 @@ pub fn start_watchdog(app: AppHandle) {
                     group_name: info.group_name.clone(),
                     nodes: initial_nodes,
                     is_locked: config.locked_groups.contains(&info.group_name),
+                    selected_regions: config.group_regions.get(&info.group_name).cloned().unwrap_or_default(),
                 });
             }
             let _ = app.emit("node_results", &initial_group_results);
@@ -222,6 +239,9 @@ pub fn start_watchdog(app: AppHandle) {
                 let group = &info.group_name;
                 let current_node = &info.current_node;
                 
+                let selected_regions = config.group_regions.get(group).cloned().unwrap_or_default();
+                let has_region_filter = !selected_regions.is_empty();
+
                 let mut fastest_node = None;
                 let mut min_delay = u64::MAX;
                 let mut current_node_delay = u64::MAX;
@@ -234,13 +254,19 @@ pub fn start_watchdog(app: AppHandle) {
                         _ => (None, None, None),
                     };
 
+                    let is_region_matched = if has_region_filter {
+                        selected_regions.iter().any(|r| matches_region(node, r))
+                    } else {
+                        true
+                    };
+
                     if let Some(delay) = delay_opt {
-                        if delay < min_delay {
-                            min_delay = delay;
-                            fastest_node = Some(node.clone());
-                        }
                         if node == current_node {
                             current_node_delay = delay;
+                        }
+                        if is_region_matched && delay < min_delay {
+                            min_delay = delay;
+                            fastest_node = Some(node.clone());
                         }
                     }
 
@@ -328,6 +354,7 @@ pub fn start_watchdog(app: AppHandle) {
                     group_name: group.clone(),
                     nodes: final_results,
                     is_locked,
+                    selected_regions,
                 });
             }
 

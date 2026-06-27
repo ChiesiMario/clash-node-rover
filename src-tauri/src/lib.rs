@@ -72,6 +72,21 @@ fn toggle_group_lock(app: tauri::AppHandle, state: tauri::State<AppState>, group
 }
 
 #[tauri::command]
+fn toggle_group_region(app: tauri::AppHandle, state: tauri::State<AppState>, group: String, region: String) -> Result<(), String> {
+    let mut config = state.config.lock().unwrap().clone();
+    let regions = config.group_regions.entry(group.clone()).or_insert_with(Vec::new);
+    if regions.contains(&region) {
+        regions.retain(|r| r != &region);
+    } else {
+        regions.push(region);
+    }
+    *state.config.lock().unwrap() = config.clone();
+    let res = config::save_config(&app, &config);
+    state.force_test.notify_one();
+    res
+}
+
+#[tauri::command]
 async fn manual_switch(app: tauri::AppHandle, state: tauri::State<'_, AppState>, db: tauri::State<'_, db::Db>, group: String, node: String) -> Result<(), String> {
     let mut config = state.config.lock().unwrap().clone();
     let api = clash::ClashApi::new(&config.api_url, &config.api_secret);
@@ -157,6 +172,7 @@ pub fn run() {
             force_test,
             get_logs,
             toggle_group_lock,
+            toggle_group_region,
             manual_switch,
             get_latest_results,
             get_status

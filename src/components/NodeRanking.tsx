@@ -16,7 +16,10 @@ interface GroupResult {
   group_name: string;
   nodes: NodeResult[];
   is_locked: boolean;
+  selected_regions?: string[];
 }
+
+const AVAILABLE_REGIONS = ["US", "JP", "HK", "SG", "TW", "KR", "UK"];
 
 interface NodeRankingProps {
   isTesting?: boolean;
@@ -139,6 +142,26 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
       );
     } catch (error) {
       console.error("Failed to toggle lock:", error);
+    }
+  };
+
+  const handleToggleRegion = async (groupName: string, region: string) => {
+    try {
+      await invoke("toggle_group_region", { group: groupName, region });
+      setGroups((prev) =>
+        prev.map((g) => {
+          if (g.group_name === groupName) {
+            const currentRegions = g.selected_regions || [];
+            const newRegions = currentRegions.includes(region)
+              ? currentRegions.filter((r) => r !== region)
+              : [...currentRegions, region];
+            return { ...g, selected_regions: newRegions };
+          }
+          return g;
+        })
+      );
+    } catch (error) {
+      console.error("Failed to toggle region:", error);
     }
   };
 
@@ -268,13 +291,33 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                   </div>
 
                   {/* Manual Selection Dropdown */}
-                  {group.is_locked && (
+                  {group.is_locked ? (
                     <div className="flex items-center gap-2 w-full animate-in slide-in-from-top-2 duration-200 fade-in">
                       <CustomNodeSelect
                         nodes={group.nodes}
                         value={currentValue}
                         onChange={(val) => handleManualSwitch(group.group_name, val)}
                       />
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 pt-2 animate-in slide-in-from-top-2 duration-200 fade-in">
+                      <span className="text-[11px] font-medium text-muted-foreground w-full -mb-0.5">Region Filter:</span>
+                      {AVAILABLE_REGIONS.map((region) => {
+                        const isSelected = (group.selected_regions || []).includes(region);
+                        return (
+                          <button
+                            key={region}
+                            onClick={() => handleToggleRegion(group.group_name, region)}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border ${
+                              isSelected
+                                ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                                : "bg-transparent text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                            }`}
+                          >
+                            {region}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

@@ -22,6 +22,7 @@ pub struct Config {
     pub browser_test_urls: Vec<String>,
     pub locked_groups: Vec<String>,
     pub ping_count: u32,
+    pub group_regions: std::collections::HashMap<String, Vec<String>>,
 }
 
 impl Default for Config {
@@ -49,6 +50,7 @@ impl Default for Config {
             ],
             locked_groups: vec![],
             ping_count: 3,
+            group_regions: std::collections::HashMap::new(),
         }
     }
 }

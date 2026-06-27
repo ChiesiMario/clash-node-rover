@@ -112,7 +112,7 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
       {/* Groups Section */}
       <div className="space-y-3">
         <h2 className="text-xl font-semibold tracking-tight">Monitored Groups</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
           {groups.map((group) => {
             const activeNode = group.nodes.find((n) => n.is_active);
             const currentValue = selectedNodes[group.group_name] || (activeNode ? activeNode.name : "");

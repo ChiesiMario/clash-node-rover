@@ -28,7 +28,7 @@ export function Dashboard({ status }: DashboardProps) {
   }
 
   return (
-    <div className="p-8 max-w-4xl mx-auto space-y-8 animate-in fade-in duration-300">
+    <div className="p-8 max-w-4xl mx-auto space-y-8">
       <div className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight">System Status</h1>
         <p className="text-muted-foreground">Monitor your proxy nodes in real-time.</p>

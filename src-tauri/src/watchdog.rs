@@ -294,13 +294,26 @@ pub fn start_watchdog(app: AppHandle) {
                 };
 
                 let mut debug_msgs = Vec::new();
+                if has_region_filter {
+                    debug_msgs.push(format!("  (目前套用地區篩選: [{}])", selected_regions.join(", ")));
+                }
+
                 let top_n = std::cmp::min(10, final_results.len());
                 for res in final_results.iter().take(top_n) {
                     let display_name = get_display_name(&res.name);
+                    let mut filter_tag = "".to_string();
+                    
+                    if has_region_filter {
+                        let is_match = selected_regions.iter().any(|r| matches_region(&res.name, r));
+                        if !is_match {
+                            filter_tag = " (略過: 區域不符)".to_string();
+                        }
+                    }
+
                     if let (Some(s), Some(m), Some(j)) = (res.delay, res.mean, res.jitter) {
-                        debug_msgs.push(format!("  - {}: Score {} (Mean: {}ms, Jitter: {}ms)", display_name, s, m, j));
+                        debug_msgs.push(format!("  - {}: Score {} (Mean: {}ms, Jitter: {}ms){}", display_name, s, m, j, filter_tag));
                     } else {
-                        debug_msgs.push(format!("  - {}: Timeout", display_name));
+                        debug_msgs.push(format!("  - {}: Timeout{}", display_name, filter_tag));
                     }
                 }
                 

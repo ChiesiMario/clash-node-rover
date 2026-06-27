@@ -240,8 +240,8 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                     <h3 className="font-semibold truncate">{group.group_name}</h3>
                   </div>
                   <div className="flex flex-col gap-1 flex-1 min-w-0">
-                    <div className="flex items-start gap-2 w-full">
-                      <div className="mt-0.5 shrink-0 flex items-center gap-1">
+                    <div className="flex items-center gap-2 w-full">
+                      <div className="shrink-0 flex items-center gap-1">
                         {activeNode?.delay === null || activeNode?.delay === undefined ? (
                           <Zap className="w-4 h-4 text-muted-foreground/50" />
                         ) : (

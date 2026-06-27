@@ -81,9 +81,7 @@ fn toggle_group_region(app: tauri::AppHandle, state: tauri::State<AppState>, gro
         regions.push(region);
     }
     *state.config.lock().unwrap() = config.clone();
-    let res = config::save_config(&app, &config);
-    state.force_test.notify_one();
-    res
+    config::save_config(&app, &config)
 }
 
 #[tauri::command]

@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Zap, WifiOff, Star, Lock, Unlock, Check, Loader2 } from "lucide-react";
+import { Zap, WifiOff, Star, Lock, Unlock, Check, Loader2, ChevronDown } from "lucide-react";
 
 interface NodeResult {
   name: string;
@@ -20,6 +20,94 @@ interface GroupResult {
 
 interface NodeRankingProps {
   isTesting?: boolean;
+}
+
+function CustomNodeSelect({ 
+  nodes, 
+  value, 
+  onChange 
+}: { 
+  nodes: NodeResult[]; 
+  value: string; 
+  onChange: (val: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [alignment, setAlignment] = useState<"left" | "right">("left");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen && dropdownRef.current) {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      if (rect.right > window.innerWidth / 2) {
+        setAlignment("right");
+      } else {
+        setAlignment("left");
+      }
+    }
+  }, [isOpen]);
+
+  const selectedNode = nodes.find(n => n.name === value) || nodes[0];
+
+  return (
+    <div className="relative w-full" ref={dropdownRef}>
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center justify-between w-full bg-background border border-border rounded-md px-3 py-2 text-sm cursor-pointer hover:border-amber-500/50 transition-colors shadow-sm"
+      >
+        <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
+           {selectedNode?.provider && (
+             <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md border border-border/50 shrink-0">
+               {selectedNode.provider}
+             </span>
+           )}
+           <span className="truncate font-medium text-foreground">{selectedNode ? selectedNode.name : "Select node..."}</span>
+        </div>
+        <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
+      </div>
+      
+      {isOpen && (
+        <div className={`absolute top-full mt-1 min-w-[320px] max-h-60 overflow-y-auto overscroll-contain bg-background border border-border rounded-md shadow-lg z-50 animate-in fade-in zoom-in-95 duration-100 flex flex-col p-1 ${alignment === "right" ? "right-0" : "left-0"}`}>
+          {nodes.map(node => (
+            <div 
+              key={node.name}
+              onClick={() => { onChange(node.name); setIsOpen(false); }}
+              className={`flex items-center gap-2 px-2 py-2 cursor-pointer rounded-sm text-sm transition-colors hover:bg-muted ${node.name === value ? "bg-muted/50" : ""}`}
+            >
+              <div className="flex items-center gap-1.5 shrink-0">
+                 {node.delay === null ? (
+                   <span className="text-[11px] font-medium text-muted-foreground/50">Timeout</span>
+                 ) : (
+                   <>
+                     <Zap className={`w-3.5 h-3.5 ${node.delay < 150 ? "text-emerald-500" : "text-amber-500"}`} />
+                     <span className={`font-mono text-[13px] font-bold ${node.delay < 150 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500"}`}>{node.delay}</span>
+                   </>
+                 )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                {node.provider && (
+                  <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md border border-border/50 shrink-0">
+                    {node.provider}
+                  </span>
+                )}
+                <span className="truncate text-foreground/90">{node.name}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
@@ -117,27 +205,36 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
       {/* Groups Section */}
       <div className="space-y-3">
         <h2 className="text-xl font-semibold tracking-tight">Monitored Groups</h2>
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 items-start">
           {groups.map((group) => {
             const activeNode = group.nodes.find((n) => n.is_active);
             const currentValue = selectedNodes[group.group_name] || (activeNode ? activeNode.name : "");
 
             return (
-              <div key={group.group_name} className="flex flex-col justify-between gap-3 bg-muted/30 p-4 rounded-xl border border-border transition-colors hover:bg-muted/50 overflow-hidden">
+              <div key={group.group_name} className="flex flex-col justify-between gap-3 bg-muted/30 p-4 rounded-xl border border-border transition-colors hover:bg-muted/50">
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="font-semibold truncate">{group.group_name}</h3>
                   </div>
                   <div className="flex flex-col gap-1 flex-1 min-w-0">
-                    <div className="text-sm text-muted-foreground flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 shrink-0 text-emerald-500" />
-                      <div className="font-medium text-sm truncate text-foreground flex-1">
-                        {activeNode ? activeNode.name : "None"}
+                    <div className="flex items-start gap-2 w-full">
+                      <div className="mt-0.5 shrink-0 flex items-center gap-1">
+                        {activeNode?.delay === null || activeNode?.delay === undefined ? (
+                          <Zap className="w-4 h-4 text-muted-foreground/50" />
+                        ) : (
+                          <>
+                            <Zap className={`w-3.5 h-3.5 ${activeNode.delay < 150 ? "text-emerald-500" : "text-amber-500"}`} />
+                            <span className={`font-mono text-[13px] font-bold ${activeNode.delay < 150 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500"}`}>{activeNode.delay}</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1 flex-1 min-w-0">
+                        <span className="font-medium text-foreground truncate">{activeNode ? activeNode.name : "Waiting..."}</span>
                       </div>
                     </div>
                     {activeNode?.provider && (
-                      <div className="flex pl-5">
-                        <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md truncate max-w-full border border-border/50">
+                      <div className="flex items-center">
+                        <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md border border-border/50 truncate max-w-full">
                           {activeNode.provider}
                         </span>
                       </div>
@@ -173,17 +270,11 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                   {/* Manual Selection Dropdown */}
                   {group.is_locked && (
                     <div className="flex items-center gap-2 w-full animate-in slide-in-from-top-2 duration-200 fade-in">
-                      <select
-                        className="bg-background border border-border rounded-md px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500/50 flex-1 min-w-0 truncate transition-colors cursor-pointer hover:border-border/80"
+                      <CustomNodeSelect
+                        nodes={group.nodes}
                         value={currentValue}
-                        onChange={(e) => handleManualSwitch(group.group_name, e.target.value)}
-                      >
-                        {group.nodes.map((node) => (
-                          <option key={node.name} value={node.name}>
-                            {node.provider ? `[${node.provider}] ` : ""}{node.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(val) => handleManualSwitch(group.group_name, val)}
+                      />
                     </div>
                   )}
                 </div>
@@ -219,20 +310,22 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                     className={`transition-colors hover:bg-muted/30 ${node.activeInGroups.length > 0 ? "bg-primary/5" : ""}`}
                   >
                     <td className="px-4 py-3 text-center">
-                      <div className="flex justify-center">
-                        <div
-                          className={`w-2.5 h-2.5 rounded-full ${
-                            node.delay === null
-                              ? isTesting 
-                                ? "bg-muted-foreground/50 animate-pulse" 
-                                : "bg-rose-500/50"
-                              : node.delay < 150
-                              ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
-                              : node.delay < 300
-                              ? "bg-amber-500"
-                              : "bg-rose-500"
-                          }`}
-                        />
+                      <div className="flex justify-center items-center h-full">
+                        {isTesting ? (
+                          <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/70" />
+                        ) : (
+                          <div
+                            className={`w-2.5 h-2.5 rounded-full ${
+                              node.delay === null
+                                ? "bg-rose-500/50"
+                                : node.delay < 150
+                                ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                                : node.delay < 300
+                                ? "bg-amber-500"
+                                : "bg-rose-500"
+                            }`}
+                          />
+                        )}
                       </div>
                     </td>
                     <td className={`px-4 py-3 min-w-[200px] max-w-[400px] font-medium ${node.activeInGroups.length > 0 ? "text-primary" : "text-foreground"}`}>
@@ -249,17 +342,10 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
                     </td>
                     <td className="px-4 py-3 font-mono">
                       {node.delay === null ? (
-                        isTesting ? (
-                          <div className="flex items-center gap-1.5 text-muted-foreground">
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            <span>Testing...</span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 text-muted-foreground">
-                            <WifiOff className="w-3.5 h-3.5" />
-                            <span>Timeout</span>
-                          </div>
-                        )
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <WifiOff className="w-3.5 h-3.5" />}
+                          <span>{isTesting ? "Testing..." : "Timeout"}</span>
+                        </div>
                       ) : (
                         <div className="flex items-center gap-1.5">
                           <Zap

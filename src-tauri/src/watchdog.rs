@@ -124,16 +124,32 @@ pub fn start_watchdog(app: AppHandle) {
                 db.insert_log("DEBUG", &format!("開始測速來自 {} 個群組的 {} 個節點...", groups_info.len(), unique_nodes.len()));
             }
 
-            // 階段一.五：立刻發送空數據的初始狀態給前端，避免畫面空白
+            // 階段一.五：立刻發送保留上一輪數據的初始狀態給前端，避免畫面空白與資料閃爍
             let mut initial_group_results: Vec<GroupResult> = Vec::new();
+            let last_results = {
+                app.state::<AppState>().last_results.lock().unwrap().clone()
+            };
             for info in &groups_info {
                 let mut initial_nodes = Vec::new();
                 for node in &info.nodes {
+                    let mut old_delay = None;
+                    let mut old_mean = None;
+                    let mut old_jitter = None;
+                    for lr in &last_results {
+                        if lr.group_name == info.group_name {
+                            if let Some(old_node) = lr.nodes.iter().find(|n| n.name == *node) {
+                                old_delay = old_node.delay;
+                                old_mean = old_node.mean;
+                                old_jitter = old_node.jitter;
+                            }
+                        }
+                    }
+
                     initial_nodes.push(NodeResult {
                         name: node.clone(),
-                        delay: None,
-                        mean: None,
-                        jitter: None,
+                        delay: old_delay,
+                        mean: old_mean,
+                        jitter: old_jitter,
                         is_active: node == &info.current_node,
                         provider: node_to_provider.get(node).cloned(),
                     });

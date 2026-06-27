@@ -16,6 +16,7 @@ struct AppState {
     pub config: Mutex<Config>,
     pub force_test: Arc<Notify>,
     pub last_results: Mutex<Vec<watchdog::GroupResult>>,
+    pub status: Mutex<watchdog::AppStatus>,
 }
 
 #[tauri::command]
@@ -49,6 +50,11 @@ fn get_latest_results(state: tauri::State<AppState>) -> Vec<watchdog::GroupResul
 #[tauri::command]
 fn get_logs(state: tauri::State<db::Db>) -> Vec<db::LogEntry> {
     state.get_logs(100)
+}
+
+#[tauri::command]
+fn get_status(state: tauri::State<AppState>) -> watchdog::AppStatus {
+    state.status.lock().unwrap().clone()
 }
 
 #[tauri::command]
@@ -98,6 +104,11 @@ pub fn run() {
                 config: Mutex::new(cfg),
                 force_test: Arc::new(Notify::new()),
                 last_results: Mutex::new(Vec::new()),
+                status: Mutex::new(watchdog::AppStatus {
+                    api_connected: false,
+                    is_testing: false,
+                    next_check_in: 0,
+                }),
             });
             
             // 啟動背景測速守門員
@@ -147,7 +158,8 @@ pub fn run() {
             get_logs,
             toggle_group_lock,
             manual_switch,
-            get_latest_results
+            get_latest_results,
+            get_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

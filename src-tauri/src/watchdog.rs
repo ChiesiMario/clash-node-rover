@@ -62,6 +62,9 @@ pub fn start_watchdog(app: AppHandle) {
 
             // 發送狀態更新給前端
             let _ = app.emit("status_update", &status);
+            if let Ok(mut current_status) = app.state::<AppState>().status.lock() {
+                *current_status = status.clone();
+            }
 
             if !status.api_connected {
                 sleep(Duration::from_secs(3)).await;
@@ -72,6 +75,9 @@ pub fn start_watchdog(app: AppHandle) {
             db.insert_log("INFO", "----------------------------------------");
             status.is_testing = true;
             let _ = app.emit("status_update", &status);
+            if let Ok(mut current_status) = app.state::<AppState>().status.lock() {
+                *current_status = status.clone();
+            }
 
             let mut all_group_results: Vec<GroupResult> = Vec::new();
 
@@ -103,6 +109,30 @@ pub fn start_watchdog(app: AppHandle) {
 
             if !groups_info.is_empty() {
                 db.insert_log("DEBUG", &format!("開始測速來自 {} 個群組的 {} 個節點...", groups_info.len(), unique_nodes.len()));
+            }
+
+            // 階段一.五：立刻發送空數據的初始狀態給前端，避免畫面空白
+            let mut initial_group_results: Vec<GroupResult> = Vec::new();
+            for info in &groups_info {
+                let mut initial_nodes = Vec::new();
+                for node in &info.nodes {
+                    initial_nodes.push(NodeResult {
+                        name: node.clone(),
+                        delay: None,
+                        mean: None,
+                        jitter: None,
+                        is_active: node == &info.current_node,
+                    });
+                }
+                initial_group_results.push(GroupResult {
+                    group_name: info.group_name.clone(),
+                    nodes: initial_nodes,
+                    is_locked: config.locked_groups.contains(&info.group_name),
+                });
+            }
+            let _ = app.emit("node_results", &initial_group_results);
+            if let Ok(mut last) = app.state::<AppState>().last_results.lock() {
+                *last = initial_group_results.clone();
             }
 
             // 階段二：對所有不重複的節點進行並發測速（每個節點內部進行多次測速）
@@ -271,12 +301,18 @@ pub fn start_watchdog(app: AppHandle) {
 
             status.is_testing = false;
             let _ = app.emit("status_update", &status);
+            if let Ok(mut current_status) = app.state::<AppState>().status.lock() {
+                *current_status = status.clone();
+            }
 
             // 3. 進入休眠倒數
             let mut remaining = config.check_interval;
             while remaining > 0 {
                 status.next_check_in = remaining;
                 let _ = app.emit("status_update", &status);
+                if let Ok(mut current_status) = app.state::<AppState>().status.lock() {
+                    *current_status = status.clone();
+                }
                 tokio::select! {
                     _ = force_test.notified() => {
                         break;

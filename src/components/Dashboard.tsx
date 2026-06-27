@@ -19,6 +19,10 @@ export function Dashboard() {
   });
 
   useEffect(() => {
+    invoke<AppStatus>("get_status").then((initialStatus) => {
+      setStatus(initialStatus);
+    }).catch(console.error);
+
     const unlisten = listen<AppStatus>("status_update", (event) => {
       setStatus(event.payload);
     });

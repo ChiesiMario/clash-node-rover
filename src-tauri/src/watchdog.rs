@@ -14,7 +14,9 @@ pub struct AppStatus {
 #[derive(serde::Serialize, Clone)]
 pub struct NodeResult {
     pub name: String,
-    pub delay: Option<u64>,
+    pub delay: Option<u64>, // Now acts as Score
+    pub mean: Option<u64>,
+    pub jitter: Option<u64>,
     pub is_active: bool,
 }
 
@@ -67,6 +69,7 @@ pub fn start_watchdog(app: AppHandle) {
             }
 
             // 2. 開始測速演算法
+            db.insert_log("INFO", "----------------------------------------");
             status.is_testing = true;
             let _ = app.emit("status_update", &status);
 
@@ -102,22 +105,51 @@ pub fn start_watchdog(app: AppHandle) {
                 db.insert_log("DEBUG", &format!("開始測速來自 {} 個群組的 {} 個節點...", groups_info.len(), unique_nodes.len()));
             }
 
-            // 階段二：對所有不重複的節點進行並發測速
+            // 階段二：對所有不重複的節點進行並發測速（每個節點內部進行多次測速）
             let test_url = config.test_urls.first().unwrap_or(&"http://www.gstatic.com/generate_204".to_string()).clone();
             let timeout = config.test_timeout;
             let max_concurrent = if config.max_concurrent > 0 { config.max_concurrent as usize } else { 10 };
+            let ping_count = std::cmp::max(1, config.ping_count);
 
             let node_stream = futures::stream::iter(unique_nodes.into_iter());
             let clash_client = clash.clone();
             
-            let mut ping_results: HashMap<String, Result<u64, ()>> = HashMap::new();
+            // Result<(Score, Mean, Jitter), String>
+            let mut ping_results: HashMap<String, Result<(u64, u64, u64), String>> = HashMap::new();
             
             let mut tasks = node_stream.map(|node| {
                 let client = clash_client.clone();
                 let url = test_url.clone();
                 async move {
-                    let res = client.ping_proxy(&node, &url, timeout).await;
-                    (node, res)
+                    let mut delays = Vec::new();
+                    for _ in 0..ping_count {
+                        match client.ping_proxy(&node, &url, timeout).await {
+                            Ok(d) => delays.push(d),
+                            Err(e) => {
+                                // Option A: 只要有 1 次超時，就判定該節點「不穩定/Timeout」
+                                return (node, Err(e));
+                            }
+                        }
+                    }
+
+                    if delays.is_empty() {
+                        return (node, Err("Timeout".to_string()));
+                    }
+
+                    // 計算 Mean 和 Jitter (標準差)
+                    let sum: u64 = delays.iter().sum();
+                    let mean = sum / (delays.len() as u64);
+                    
+                    let mut variance_sum = 0.0;
+                    for &d in &delays {
+                        let diff = (d as f64) - (mean as f64);
+                        variance_sum += diff * diff;
+                    }
+                    let variance = variance_sum / (delays.len() as f64);
+                    let jitter = variance.sqrt().round() as u64;
+                    let score = mean + jitter;
+
+                    (node, Ok((score, mean, jitter)))
                 }
             }).buffer_unordered(max_concurrent);
 
@@ -137,9 +169,9 @@ pub fn start_watchdog(app: AppHandle) {
                 let mut final_results: Vec<NodeResult> = Vec::new();
 
                 for node in &info.nodes {
-                    let delay_opt = match ping_results.get(node) {
-                        Some(Ok(d)) => Some(*d),
-                        _ => None,
+                    let (delay_opt, mean_opt, jitter_opt) = match ping_results.get(node) {
+                        Some(Ok((s, m, j))) => (Some(*s), Some(*m), Some(*j)),
+                        _ => (None, None, None),
                     };
 
                     if let Some(delay) = delay_opt {
@@ -155,6 +187,8 @@ pub fn start_watchdog(app: AppHandle) {
                     final_results.push(NodeResult {
                         name: node.clone(),
                         delay: delay_opt,
+                        mean: mean_opt,
+                        jitter: jitter_opt,
                         is_active: node == current_node,
                     });
                 }
@@ -169,15 +203,26 @@ pub fn start_watchdog(app: AppHandle) {
                 });
 
                 let mut debug_msgs = Vec::new();
-                for res in &final_results {
-                    if let Some(d) = res.delay {
-                        debug_msgs.push(format!("  - {}: {}ms", res.name, d));
+                let top_n = std::cmp::min(10, final_results.len());
+                for res in final_results.iter().take(top_n) {
+                    if let (Some(s), Some(m), Some(j)) = (res.delay, res.mean, res.jitter) {
+                        debug_msgs.push(format!("  - {}: Score {} (Mean: {}ms, Jitter: {}ms)", res.name, s, m, j));
                     } else {
                         debug_msgs.push(format!("  - {}: Timeout", res.name));
                     }
                 }
-                db.insert_log("DEBUG", &format!("群組 [{}] 節點結果:\n{}", group, debug_msgs.join("\n")));
-                db.insert_log("DEBUG", &format!("群組 [{}] 決策變數: current={}, current_delay={}, fastest={:?}, min_delay={}", group, current_node, current_node_delay, fastest_node, min_delay));
+                
+                if final_results.len() > 10 {
+                    debug_msgs.push(format!("  - ... 以及其他 {} 個節點 (省略顯示)", final_results.len() - 10));
+                }
+                
+                db.insert_log("DEBUG", &format!("群組 [{}] 節點結果 (Top 10):\n{}", group, debug_msgs.join("\n")));
+
+                let current_delay_str = if current_node_delay == u64::MAX { "Timeout".to_string() } else { format!("{}ms", current_node_delay) };
+                let min_delay_str = if min_delay == u64::MAX { "Timeout".to_string() } else { format!("{}ms", min_delay) };
+                let fastest_node_str = fastest_node.clone().unwrap_or_else(|| "None".to_string());
+
+                db.insert_log("DEBUG", &format!("群組 [{}] 決策變數: current={}, current_delay={}, fastest={}, min_delay={}", group, current_node, current_delay_str, fastest_node_str, min_delay_str));
                 
                 // Jitter 容忍度邏輯判斷
                 let is_locked = config.locked_groups.contains(group);
@@ -191,10 +236,11 @@ pub fn start_watchdog(app: AppHandle) {
                         current_node_delay.saturating_sub(min_delay)
                     };
 
-                    if diff > config.tolerance_ms {
+                    if diff > config.tolerance {
                         // 超過容忍度，進行切換
                         if let Ok(_) = clash.select_proxy(group, &fastest).await {
-                            db.insert_log("INFO", &format!("群組 [{}] 切換至最快節點: {} (優勢 {}ms)", group, fastest, diff));
+                            let advantage_str = if diff == u64::MAX { "當前節點超時".to_string() } else { format!("優勢 {} 分", diff) };
+                            db.insert_log("INFO", &format!("群組 [{}] 切換至最快節點: {} ({})", group, fastest, advantage_str));
                             
                             // Update the active node in our emitted results to reflect the switch
                             for res in &mut final_results {
@@ -205,7 +251,7 @@ pub fn start_watchdog(app: AppHandle) {
                         }
                     } else {
                         // 在容忍度內，保持當前節點
-                        db.insert_log("INFO", &format!("群組 [{}] 保持當前節點: {} (與最快差距 {}ms，容忍度內)", group, current_node, diff));
+                        db.insert_log("INFO", &format!("群組 [{}] 保持當前節點: {} (與最佳差距 {} 分，容忍度內)", group, current_node, diff));
                     }
                 } else {
                     db.insert_log("WARN", &format!("群組 [{}] 所有節點皆無回應 (Timeout: {}ms)", group, config.test_timeout));

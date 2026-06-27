@@ -13,7 +13,7 @@ pub struct Config {
     pub dedicated_test_group: String,
     pub test_urls: Vec<String>,
     pub test_timeout: u64,
-    pub tolerance_ms: u64,
+    pub tolerance: u64,
     pub cleanup_days: u64,
     pub max_concurrent: u64,
     pub clash_proxy_url: String,
@@ -21,6 +21,7 @@ pub struct Config {
     pub enable_browser_test: bool,
     pub browser_test_urls: Vec<String>,
     pub locked_groups: Vec<String>,
+    pub ping_count: u32,
 }
 
 impl Default for Config {
@@ -36,7 +37,7 @@ impl Default for Config {
                 "http://cp.cloudflare.com/generate_204".into(),
             ],
             test_timeout: 2000,
-            tolerance_ms: 10,
+            tolerance: 3,
             cleanup_days: 7,
             max_concurrent: 10,
             clash_proxy_url: "http://127.0.0.1:7890".into(),
@@ -47,6 +48,7 @@ impl Default for Config {
                 "https://www.youtube.com".into(),
             ],
             locked_groups: vec![],
+            ping_count: 3,
         }
     }
 }

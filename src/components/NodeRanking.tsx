@@ -5,7 +5,9 @@ import { Zap, WifiOff, Star, Lock, Unlock, Check } from "lucide-react";
 
 interface NodeResult {
   name: string;
-  delay: number | null;
+  delay: number | null; // This is the Score now
+  mean?: number | null;
+  jitter?: number | null;
   is_active: boolean;
 }
 
@@ -81,6 +83,8 @@ export function NodeRanking() {
         allNodesMap.set(node.name, {
           name: node.name,
           delay: node.delay,
+          mean: node.mean,
+          jitter: node.jitter,
           activeInGroups: []
         });
       }
@@ -175,8 +179,9 @@ export function NodeRanking() {
                 <tr>
                   <th className="px-4 py-3 font-medium w-12 text-center">Status</th>
                   <th className="px-4 py-3 font-medium">Node Name</th>
-                  <th className="px-4 py-3 font-medium w-32">Delay</th>
-                  <th className="px-4 py-3 font-medium w-64">Active In Groups</th>
+                  <th className="px-4 py-3 font-medium w-32">Score</th>
+                  <th className="px-4 py-3 font-medium w-32">Mean/Jitter</th>
+                  <th className="px-4 py-3 font-medium w-48">Active In Groups</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
@@ -222,9 +227,19 @@ export function NodeRanking() {
                                 ? "text-emerald-600 dark:text-emerald-400 font-semibold"
                                 : "text-muted-foreground"
                             }
+                            title="Score = Mean + Jitter"
                           >
-                            {node.delay}ms
+                            {node.delay}
                           </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
+                      {node.delay !== null && node.mean !== undefined && node.jitter !== undefined && (
+                        <div>
+                          <span className="text-foreground/70">{node.mean}ms</span> <span className="opacity-50">avg</span>
+                          <br />
+                          <span className="text-amber-500/80">±{node.jitter}ms</span> <span className="opacity-50">jit</span>
                         </div>
                       )}
                     </td>

@@ -126,15 +126,15 @@ export function Settings() {
           <h2 className="text-lg font-medium">Advanced Speed Test Algorithm</h2>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Switch Tolerance (ms)</label>
+              <label className="text-sm font-medium text-muted-foreground">Switch Tolerance (Score)</label>
               <input
                 type="number"
-                value={config.tolerance_ms}
-                onChange={(e) => setConfig({ ...config, tolerance_ms: parseInt(e.target.value) || 0 })}
+                value={config.tolerance}
+                onChange={(e) => setConfig({ ...config, tolerance: parseInt(e.target.value) || 0 })}
                 className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 placeholder="10"
               />
-              <p className="text-xs text-muted-foreground">Don't switch if the current node is within this many ms of the fastest node.</p>
+              <p className="text-xs text-muted-foreground">Don't switch if the current node is within this many score points of the best node.</p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium text-muted-foreground">Ping Timeout (ms)</label>
@@ -156,6 +156,18 @@ export function Settings() {
                 placeholder="10"
               />
               <p className="text-xs text-muted-foreground">Maximum number of simultaneous ping requests to send.</p>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">Ping Count</label>
+              <input
+                type="number"
+                value={config.ping_count}
+                onChange={(e) => setConfig({ ...config, ping_count: parseInt(e.target.value) || 3 })}
+                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="3"
+                min="1"
+              />
+              <p className="text-xs text-muted-foreground">Number of times to test each node. Higher values improve jitter calculation but take longer.</p>
             </div>
           </div>
         </div>

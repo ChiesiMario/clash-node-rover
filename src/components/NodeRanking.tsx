@@ -170,7 +170,16 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
     try {
       await invoke("manual_switch", { group: groupName, node: nodeName });
       setGroups((prev) =>
-        prev.map((g) => (g.group_name === groupName ? { ...g, is_locked: true } : g))
+        prev.map((g) => {
+          if (g.group_name === groupName) {
+            return {
+              ...g,
+              is_locked: true,
+              nodes: g.nodes.map(n => ({ ...n, is_active: n.name === nodeName }))
+            };
+          }
+          return g;
+        })
       );
       setSelectedNodes((prev) => ({ ...prev, [groupName]: nodeName }));
     } catch (error) {

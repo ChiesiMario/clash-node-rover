@@ -95,15 +95,16 @@ export function Settings() {
                     <input
                       type="checkbox"
                       checked={config.target_groups.includes(group)}
+                      disabled={config.enable_browser_test && config.dedicated_test_group === group}
                       onChange={(e) => {
                         const newGroups = e.target.checked
                           ? [...config.target_groups, group]
                           : config.target_groups.filter((g: string) => g !== group);
                         setConfig({ ...config, target_groups: newGroups });
                       }}
-                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary disabled:opacity-50"
                     />
-                    <span className="text-sm font-medium">{group}</span>
+                    <span className={`text-sm font-medium ${config.enable_browser_test && config.dedicated_test_group === group ? "text-muted-foreground" : ""}`}>{group}</span>
                   </label>
                 ))}
               </div>
@@ -170,6 +171,95 @@ export function Settings() {
               <p className="text-xs text-muted-foreground">Number of times to test each node. Higher values improve jitter calculation but take longer.</p>
             </div>
           </div>
+        </div>
+
+        <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-medium">HTTP Proxy Testing (Pre-switch Verification)</h2>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <span className="text-sm font-medium text-muted-foreground">Enable Testing</span>
+              <input
+                type="checkbox"
+                checked={config.enable_browser_test}
+                onChange={(e) => setConfig({ ...config, enable_browser_test: e.target.checked })}
+                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+              />
+            </label>
+          </div>
+          
+          {config.enable_browser_test && (
+            <div className="space-y-4 pt-2 border-t border-border/50">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium text-muted-foreground">Dedicated Test Group (Required)</label>
+                  {availableGroups.length === 0 && (
+                    <button
+                      onClick={async () => {
+                        try {
+                          const groups = await invoke<string[]>("get_clash_selectors");
+                          setAvailableGroups(groups);
+                        } catch (e: any) {
+                          alert("Failed to fetch groups: " + e);
+                        }
+                      }}
+                      className="text-[10px] bg-secondary text-secondary-foreground px-2 py-1 rounded-md hover:bg-secondary/80 font-medium transition-colors"
+                    >
+                      Fetch Groups
+                    </button>
+                  )}
+                </div>
+                {availableGroups.length > 0 ? (
+                  <select
+                    value={config.dedicated_test_group}
+                    onChange={(e) => setConfig({ ...config, dedicated_test_group: e.target.value })}
+                    className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="" disabled>Select a group...</option>
+                    {availableGroups.map((group) => (
+                      <option 
+                        key={group} 
+                        value={group} 
+                        disabled={config.target_groups.includes(group)}
+                      >
+                        {group} {config.target_groups.includes(group) ? "(Used in Monitored)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={config.dedicated_test_group}
+                    onChange={(e) => setConfig({ ...config, dedicated_test_group: e.target.value })}
+                    className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    placeholder="e.g., SpeedTest"
+                  />
+                )}
+                <p className="text-xs text-muted-foreground">The system will switch this group to the target node and send requests through the proxy below.</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">HTTP Proxy Server Address (Required)</label>
+                <input
+                  type="text"
+                  value={config.clash_proxy_url}
+                  onChange={(e) => setConfig({ ...config, clash_proxy_url: e.target.value })}
+                  className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  placeholder="e.g., 127.0.0.1:7890"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-muted-foreground">Target Test URLs (One per line)</label>
+                <textarea
+                  value={config.browser_test_urls.join('\n')}
+                  onChange={(e) => setConfig({ ...config, browser_test_urls: e.target.value.split('\n').filter(s => s.trim() !== '') })}
+                  className="w-full h-24 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                  placeholder="https://www.google.com&#10;https://www.youtube.com"
+                />
+                <p className="text-xs text-muted-foreground">Before switching, the system will send GET requests to all these URLs simultaneously. All requests must succeed to proceed.</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

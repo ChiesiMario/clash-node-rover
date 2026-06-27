@@ -97,7 +97,16 @@ async fn manual_switch(app: tauri::AppHandle, state: tauri::State<'_, AppState>,
         let _ = config::save_config(&app, &config);
     }
     
-    state.force_test.notify_one();
+    if let Ok(mut last_results) = state.last_results.lock() {
+        for g in last_results.iter_mut() {
+            if g.group_name == group {
+                for n in &mut g.nodes {
+                    n.is_active = n.name == node;
+                }
+            }
+        }
+    }
+    
     Ok(())
 }
 

@@ -44,6 +44,57 @@ fn matches_region(node_name: &str, region: &str) -> bool {
     keywords.iter().any(|k| lower.contains(k))
 }
 
+async fn perform_http_test(node_name: &str, config: &crate::config::Config, clash: &ClashApi, db: &Db) -> bool {
+    db.insert_log("DEBUG", &format!("HTTP 測試: 準備測試節點 [{}]", node_name));
+    if let Err(e) = clash.select_proxy(&config.dedicated_test_group, node_name).await {
+        db.insert_log("ERROR", &format!("HTTP 測試: 無法切換專屬測速群組: {}", e));
+        return false;
+    }
+    
+    // 等待 500ms
+    sleep(Duration::from_millis(500)).await;
+    
+    let proxy_url = if config.clash_proxy_url.starts_with("http") { config.clash_proxy_url.clone() } else { format!("http://{}", config.clash_proxy_url) };
+    let proxy = match reqwest::Proxy::all(&proxy_url) {
+        Ok(p) => p,
+        Err(e) => { db.insert_log("ERROR", &format!("HTTP 測試: Proxy 解析失敗: {}", e)); return false; }
+    };
+    
+    let client = match reqwest::Client::builder().proxy(proxy).timeout(Duration::from_secs(5)).build() {
+        Ok(c) => c,
+        Err(e) => { db.insert_log("ERROR", &format!("HTTP 測試: Client 建立失敗: {}", e)); return false; }
+    };
+    
+    let mut futures = Vec::new();
+    for url in &config.browser_test_urls {
+        let c = client.clone();
+        let u = url.clone();
+        futures.push(tauri::async_runtime::spawn(async move {
+            match c.get(&u).send().await {
+                Ok(resp) => resp.status().is_success(),
+                Err(_) => false,
+            }
+        }));
+    }
+    
+    let mut all_success = true;
+    for f in futures {
+        if let Ok(success) = f.await {
+            if !success { all_success = false; break; }
+        } else {
+            all_success = false; break;
+        }
+    }
+    
+    if all_success {
+        db.insert_log("INFO", &format!("HTTP 測試: 節點 [{}] 測試通過", node_name));
+    } else {
+        db.insert_log("WARN", &format!("HTTP 測試: 節點 [{}] 測試失敗", node_name));
+    }
+    
+    all_success
+}
+
 pub fn start_watchdog(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -89,7 +140,18 @@ pub fn start_watchdog(app: AppHandle) {
             }
 
             // 2. 開始測速演算法
-            db.insert_log("INFO", "----------------------------------------");
+            db.insert_log("INFO", "==================================================");
+            db.insert_log("INFO", "[測速任務開始]");
+            let current_tolerance = config.tolerance;
+            db.insert_log("INFO", &format!("- 容忍度 (Tolerance): {} 分 (新節點需領先大於此分數才會切換)", current_tolerance));
+            db.insert_log("INFO", &format!("- 併發數 (Max Concurrency): {}", config.max_concurrent));
+            db.insert_log("INFO", &format!("- 測試次數 (Ping Count): {} 次", std::cmp::max(1, config.ping_count)));
+            if config.enable_browser_test {
+                db.insert_log("INFO", &format!("- HTTP 測試: 啟用 (群組: {}, 代理: {})", config.dedicated_test_group, config.clash_proxy_url));
+            } else {
+                db.insert_log("INFO", "- HTTP 測試: 未啟用");
+            }
+            db.insert_log("INFO", "--------------------------------------------------");
             status.is_testing = true;
             let _ = app.emit("status_update", &status);
             if let Ok(mut current_status) = app.state::<AppState>().status.lock() {
@@ -234,6 +296,8 @@ pub fn start_watchdog(app: AppHandle) {
                 ping_results.insert(node, res);
             }
 
+            let mut http_test_cache: HashMap<String, bool> = HashMap::new();
+
             // 階段三：分配測速結果至各群組進行決策
             for info in groups_info {
                 let group = &info.group_name;
@@ -263,6 +327,9 @@ pub fn start_watchdog(app: AppHandle) {
                     if let Some(delay) = delay_opt {
                         if node == current_node {
                             current_node_delay = delay;
+                            if has_region_filter && !is_region_matched {
+                                current_node_delay = u64::MAX; // 若當前節點不符合篩選地區，強制視為失效以觸發切換
+                            }
                         }
                         if is_region_matched && delay < min_delay {
                             min_delay = delay;
@@ -321,46 +388,104 @@ pub fn start_watchdog(app: AppHandle) {
                     debug_msgs.push(format!("  - ... 以及其他 {} 個節點 (省略顯示)", final_results.len() - 10));
                 }
                 
-                db.insert_log("DEBUG", &format!("群組 [{}] 節點結果 (Top 10):\n{}", group, debug_msgs.join("\n")));
+                db.insert_log("DEBUG", &format!("[群組: {}] 測速結果 (Top {}):", group, std::cmp::min(10, final_results.len())));
+                for msg in debug_msgs {
+                    db.insert_log("DEBUG", &msg);
+                }
 
-                let current_delay_str = if current_node_delay == u64::MAX { "Timeout".to_string() } else { format!("{}ms", current_node_delay) };
-                let min_delay_str = if min_delay == u64::MAX { "Timeout".to_string() } else { format!("{}ms", min_delay) };
-                let fastest_node_str = fastest_node.as_ref().map(|n| get_display_name(n)).unwrap_or_else(|| "None".to_string());
+                let current_delay_str = if current_node_delay == u64::MAX { "Timeout".to_string() } else { format!("{} 分", current_node_delay) };
                 let current_node_str = get_display_name(current_node);
 
-                db.insert_log("DEBUG", &format!("群組 [{}] 決策變數: current={}, current_delay={}, fastest={}, min_delay={}", group, current_node_str, current_delay_str, fastest_node_str, min_delay_str));
+                db.insert_log("DEBUG", &format!("[群組: {}] 決策分析開始...", group));
+                db.insert_log("DEBUG", &format!("- 當前使用節點: {} (分數: {})", current_node_str, current_delay_str));
                 
                 // Jitter 容忍度邏輯判斷
                 let is_locked = config.locked_groups.contains(group);
                 
                 if is_locked {
-                    db.insert_log("INFO", &format!("群組 [{}] 已鎖定，略過自動切換", group));
-                } else if let Some(fastest) = fastest_node {
-                    let diff = if current_node_delay == u64::MAX {
-                        u64::MAX // Current node failed
-                    } else {
-                        current_node_delay.saturating_sub(min_delay)
-                    };
+                    db.insert_log("INFO", &format!("[群組: {}] 狀態為「已鎖定 (手動切換)」，略過自動切換邏輯。", group));
+                } else {
+                    let mut switched = false;
+                    let mut switched_to_node = None;
+                    for res in &final_results {
+                        if let Some(delay) = res.delay {
+                            // 檢查是否符合地區篩選
+                            if has_region_filter && !selected_regions.iter().any(|r| matches_region(&res.name, r)) {
+                                db.insert_log("DEBUG", &format!("- 候選節點 {} (分數: {}): 區域不符 (套用地區: {:?})，略過。", get_display_name(&res.name), delay, selected_regions));
+                                continue;
+                            }
 
-                    if diff > config.tolerance {
-                        // 超過容忍度，進行切換
-                        if let Ok(_) = clash.select_proxy(group, &fastest).await {
-                            let advantage_str = if diff == u64::MAX { "當前節點超時".to_string() } else { format!("優勢 {} 分", diff) };
-                            db.insert_log("INFO", &format!("群組 [{}] 切換至最快節點: {} ({})", group, get_display_name(&fastest), advantage_str));
-                            
-                            // Update the active node in our emitted results to reflect the switch
-                            for res in &mut final_results {
-                                res.is_active = res.name == fastest;
+                            let diff = if current_node_delay == u64::MAX {
+                                u64::MAX
+                            } else {
+                                current_node_delay.saturating_sub(delay)
+                            };
+
+                            if diff > config.tolerance {
+                                let node_name = &res.name;
+                                db.insert_log("DEBUG", &format!("- 候選節點 {} (分數: {}): 比當前節點快 {} 分，大於容忍度 ({} 分)，進入切換驗證階段...", get_display_name(node_name), delay, diff, config.tolerance));
+
+                                let mut is_good = true;
+
+                                // 如果啟用 HTTP 測試防護
+                                if config.enable_browser_test && !config.dedicated_test_group.is_empty() && !config.clash_proxy_url.is_empty() && !config.browser_test_urls.is_empty() {
+                                    is_good = if let Some(&cached_res) = http_test_cache.get(node_name) {
+                                        if cached_res {
+                                            db.insert_log("DEBUG", "  -> 沿用跨群組快取: HTTP 測試成功。");
+                                        } else {
+                                            db.insert_log("DEBUG", "  -> 沿用跨群組快取: HTTP 測試失敗。");
+                                        }
+                                        cached_res
+                                    } else {
+                                        db.insert_log("DEBUG", "  -> 開始發送真實 HTTP 請求進行連通性驗證...");
+                                        let result = perform_http_test(node_name, &config, &clash, &db).await;
+                                        http_test_cache.insert(node_name.clone(), result);
+                                        result
+                                    };
+                                }
+
+                                if is_good {
+                                    // 執行切換
+                                    if let Ok(_) = clash.select_proxy(group, node_name).await {
+                                        let advantage_str = if diff == u64::MAX { "當前節點超時或區域不符".to_string() } else { format!("領先 {} 分", diff) };
+                                        db.insert_log("INFO", &format!("[群組: {}] 成功切換至: {} ({})", group, get_display_name(node_name), advantage_str));
+                                        
+                                        switched_to_node = Some(node_name.to_string());
+                                        switched = true;
+                                        break; // 成功切換，結束尋找
+                                    } else {
+                                        db.insert_log("ERROR", &format!("[群組: {}] 嘗試切換至 {} 失敗 (API 錯誤)。", group, get_display_name(node_name)));
+                                        break;
+                                    }
+                                } else {
+                                    db.insert_log("DEBUG", &format!("  -> 節點 {} 未通過 HTTP 測試，放棄並繼續尋找下一順位。", get_display_name(node_name)));
+                                    continue; // 繼續看下一個節點
+                                }
+                            } else {
+                                // 第一個符合地區且能連上的節點，如果連它都沒有超過 tolerance，後面的更慢就不用看了
+                                db.insert_log("INFO", &format!("[群組: {}] 候選節點 {} (分數: {}): 與當前節點差距 {} 分，未超過容忍度 ({} 分)。保持當前節點不切換。", group, get_display_name(&res.name), delay, diff, config.tolerance));
+                                switched = true; // 視為已處理
+                                break;
                             }
                         } else {
-                            db.insert_log("ERROR", &format!("群組 [{}] 切換至 {} 失敗", group, get_display_name(&fastest)));
+                            // delay 是 None 代表 Timeout，後面都是 Timeout 了
+                            db.insert_log("DEBUG", "- 剩餘候選節點皆為 Timeout，結束尋找。");
+                            break;
                         }
-                    } else {
-                        // 在容忍度內，保持當前節點
-                        db.insert_log("INFO", &format!("群組 [{}] 保持當前節點: {} (與最佳差距 {} 分，容忍度內)", group, current_node_str, diff));
                     }
-                } else {
-                    db.insert_log("WARN", &format!("群組 [{}] 所有節點皆無回應 (Timeout: {}ms)", group, config.test_timeout));
+
+                    if let Some(target_node_name) = switched_to_node {
+                        for r in &mut final_results {
+                            r.is_active = r.name == target_node_name;
+                        }
+                    }
+
+                    if !switched {
+                        // 如果跑到這裡且 current_node_delay 是 MAX，代表全部都死了或 HTTP 測試全滅
+                        if current_node_delay == u64::MAX {
+                            db.insert_log("WARN", &format!("[群組: {}] 警告：所有候補節點皆無法使用或未通過 HTTP 測試！", group));
+                        }
+                    }
                 }
 
                 all_group_results.push(GroupResult {

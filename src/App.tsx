@@ -69,21 +69,21 @@ function App() {
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
           >
             <Activity className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('tabs.dashboard', 'Dashboard')}</span>
+            <span className="font-medium text-sm">{t('nav.dashboard', 'Dashboard')}</span>
           </Tabs.Trigger>
           <Tabs.Trigger
             value="settings"
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
           >
             <Settings2 className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('tabs.settings', 'Settings')}</span>
+            <span className="font-medium text-sm">{t('nav.settings', 'Settings')}</span>
           </Tabs.Trigger>
           <Tabs.Trigger
             value="console"
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
           >
             <TerminalSquare className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('tabs.console', 'Console')}</span>
+            <span className="font-medium text-sm">{t('nav.console', 'Console')}</span>
           </Tabs.Trigger>
         </Tabs.List>
 

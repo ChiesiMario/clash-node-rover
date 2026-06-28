@@ -20,25 +20,6 @@
 
 ---
 
-## 📸 Interface Preview
-
-### Dashboard
-Monitor system status, API connectivity, active groups, and current speed test progress in real time.
-
-<img src="image/1.png" alt="Dashboard" width="100%" />
-
-### Node Ranking & History
-Sorts all nodes by score, supports region filtering, and allows clicking on a node to expand its 24H / 3-Day / 7-Day historical latency line chart.
-
-<img src="image/2.png" alt="Node Ranking" width="100%" />
-
-### Advanced Settings
-Highly customizable settings for Tolerance, Backoff Rounds, and maximum concurrency to suit various network environments.
-
-<img src="image/3.png" alt="Settings" width="100%" />
-
----
-
 ## 📥 Installation & Usage
 
 ### 1. Download & Install

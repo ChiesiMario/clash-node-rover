@@ -1,7 +1,7 @@
 use std::time::Duration;
 use tauri::{AppHandle, Manager, Emitter};
 use tokio::time::sleep;
-use futures::stream::{FuturesUnordered, StreamExt};
+use futures::stream::StreamExt;
 use crate::{AppState, db::Db, clash::ClashApi};
 
 #[derive(Clone, serde::Serialize)]

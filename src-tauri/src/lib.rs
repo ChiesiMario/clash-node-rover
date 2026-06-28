@@ -5,13 +5,13 @@ mod watchdog;
 
 use tauri::{
     AppHandle, Manager, Emitter,
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, CheckMenuItem, PredefinedMenuItem},
     tray::TrayIconBuilder,
 };
 use config::Config;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
-use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use std::env;
 
 struct AppState {
@@ -169,11 +169,15 @@ pub fn run() {
             watchdog::start_watchdog(app.handle().clone());
             
             // 建立系統列選單與圖示
+            let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+            
             let show_i = MenuItem::with_id(app, "show", "Show Dashboard", true, None::<&str>)?;
             let force_test_i = MenuItem::with_id(app, "force_test", "Force Test", true, None::<&str>)?;
             let toggle_pause_i = MenuItem::with_id(app, "toggle_pause", "Pause / Resume", true, None::<&str>)?;
+            let autostart_i = CheckMenuItem::with_id(app, "toggle_autostart", "Auto-start on Boot", true, is_autostart_enabled, None::<&str>)?;
+            let separator = PredefinedMenuItem::separator(app)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &force_test_i, &toggle_pause_i, &quit_i])?;
+            let menu = Menu::with_items(app, &[&show_i, &force_test_i, &toggle_pause_i, &separator, &autostart_i, &separator, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -198,6 +202,15 @@ pub fn run() {
                         status.is_paused = !status.is_paused;
                         let _ = app.emit("status_update", &*status);
                         state.force_test.notify_one();
+                    }
+                    "toggle_autostart" => {
+                        let manager = app.autolaunch();
+                        let is_enabled = manager.is_enabled().unwrap_or(false);
+                        if is_enabled {
+                            let _ = manager.disable();
+                        } else {
+                            let _ = manager.enable();
+                        }
                     }
                     _ => {}
                 })

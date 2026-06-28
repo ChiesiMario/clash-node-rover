@@ -20,6 +20,7 @@ pub struct NodeResult {
     pub jitter: Option<u64>,
     pub is_active: bool,
     pub provider: Option<String>,
+    pub backoff_rounds: Option<u32>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -99,6 +100,8 @@ async fn perform_http_test(node_name: &str, config: &crate::config::Config, clas
 pub fn start_watchdog(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut has_logged_empty_groups = false;
+        let mut node_failures: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut node_skips_remaining: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         loop {
             // 讀取最新的 config
             let (config, force_test) = {
@@ -260,12 +263,14 @@ pub fn start_watchdog(app: AppHandle) {
                     let mut old_delay = None;
                     let mut old_mean = None;
                     let mut old_jitter = None;
+                    let mut old_backoff = None;
                     for lr in &last_results {
                         if lr.group_name == info.group_name {
                             if let Some(old_node) = lr.nodes.iter().find(|n| n.name == *node) {
                                 old_delay = old_node.delay;
                                 old_mean = old_node.mean;
                                 old_jitter = old_node.jitter;
+                                old_backoff = old_node.backoff_rounds;
                             }
                         }
                     }
@@ -277,6 +282,7 @@ pub fn start_watchdog(app: AppHandle) {
                         jitter: old_jitter,
                         is_active: node == &info.current_node,
                         provider: node_to_provider.get(node).cloned(),
+                        backoff_rounds: old_backoff,
                     });
                 }
                 initial_group_results.push(GroupResult {
@@ -297,7 +303,26 @@ pub fn start_watchdog(app: AppHandle) {
             let max_concurrent = if config.max_concurrent > 0 { config.max_concurrent as usize } else { 10 };
             let ping_count = std::cmp::max(1, config.ping_count);
 
-            let node_stream = futures::stream::iter(unique_nodes.into_iter());
+            let mut active_nodes_for_test = Vec::new();
+            let mut backed_off_nodes = HashMap::new();
+            
+            for node in unique_nodes {
+                if let Some(skips) = node_skips_remaining.get_mut(&node) {
+                    if *skips > 0 {
+                        *skips -= 1;
+                        let fails = node_failures.get(&node).cloned().unwrap_or(1);
+                        backed_off_nodes.insert(node.clone(), fails);
+                        continue;
+                    }
+                }
+                active_nodes_for_test.push(node);
+            }
+
+            if !backed_off_nodes.is_empty() {
+                db.insert_log("DEBUG", &format!("- 有 {} 個節點正在退避中，本次將跳過測試", backed_off_nodes.len()));
+            }
+
+            let node_stream = futures::stream::iter(active_nodes_for_test.into_iter());
             let clash_client = clash.clone();
             
             // Result<(Score, Mean, Jitter), String>
@@ -340,6 +365,20 @@ pub fn start_watchdog(app: AppHandle) {
             }).buffer_unordered(max_concurrent);
 
             while let Some((node, res)) = tasks.next().await {
+                match &res {
+                    Ok(_) => {
+                        node_failures.insert(node.clone(), 0);
+                        node_skips_remaining.insert(node.clone(), 0);
+                    },
+                    Err(_) => {
+                        let fails = node_failures.entry(node.clone()).or_insert(0);
+                        *fails += 1;
+                        if *fails > config.max_backoff_times {
+                            *fails = config.max_backoff_times;
+                        }
+                        node_skips_remaining.insert(node.clone(), *fails);
+                    }
+                }
                 ping_results.insert(node, res);
             }
 
@@ -377,6 +416,8 @@ pub fn start_watchdog(app: AppHandle) {
                             }
                         }
                     }
+                    
+                    let backoff = backed_off_nodes.get(node).cloned();
 
                     final_results.push(NodeResult {
                         name: node.clone(),
@@ -385,6 +426,7 @@ pub fn start_watchdog(app: AppHandle) {
                         jitter: jitter_opt,
                         is_active: node == current_node,
                         provider: node_to_provider.get(node).cloned(),
+                        backoff_rounds: backoff,
                     });
                 }
                 

@@ -10,6 +10,7 @@ interface NodeResult {
   jitter?: number;
   is_active: boolean;
   provider?: string;
+  backoff_rounds?: number | null;
 }
 
 interface GroupResult {
@@ -90,11 +91,13 @@ function CustomNodeSelect({
             >
               <div className="flex items-center gap-1.5 shrink-0">
                  {node.delay === null ? (
-                   <span className="text-[11px] font-medium text-muted-foreground/50">Timeout</span>
+                   <span className="text-[11px] font-medium text-rose-500 dark:text-rose-400">
+                     {node.backoff_rounds && node.backoff_rounds > 0 ? `Backoff: ${node.backoff_rounds}` : "Timeout"}
+                   </span>
                  ) : (
                    <>
-                     <Zap className={`w-3.5 h-3.5 ${node.delay < 150 ? "text-emerald-500" : "text-amber-500"}`} />
-                     <span className={`font-mono text-[13px] font-bold ${node.delay < 150 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500"}`}>{node.delay}</span>
+                     <Zap className={`w-3.5 h-3.5 ${getColorClass(node.delay, "text")}`} />
+                     <span className={`font-mono text-[13px] font-bold ${getColorClass(node.delay, "text")}`}>{node.delay}</span>
                    </>
                  )}
               </div>
@@ -114,6 +117,21 @@ function CustomNodeSelect({
     </div>
   );
 }
+
+const getColorClass = (delay: number | null, type: "bg" | "text") => {
+  if (delay === null) return type === "bg" ? "bg-rose-600/80" : "text-rose-600 dark:text-rose-500";
+  if (delay <= 150) return type === "bg" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "text-emerald-600 dark:text-emerald-400";
+  if (delay <= 300) return type === "bg" ? "bg-amber-500" : "text-amber-600 dark:text-amber-500";
+  if (delay <= 500) return type === "bg" ? "bg-orange-500" : "text-orange-600 dark:text-orange-500";
+  return type === "bg" ? "bg-pink-500" : "text-pink-600 dark:text-pink-400";
+};
+
+const getJitterColorClass = (jitter: number) => {
+  if (jitter <= 5) return "text-emerald-600 dark:text-emerald-400";
+  if (jitter <= 20) return "text-amber-600 dark:text-amber-500";
+  if (jitter <= 50) return "text-orange-600 dark:text-orange-500";
+  return "text-rose-600 dark:text-rose-500";
+};
 
 export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRankingProps = {}) {
   const [groups, setGroups] = useState<GroupResult[]>([]);
@@ -240,6 +258,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
     mean?: number | null;
     jitter?: number;
     provider?: string;
+    backoff_rounds?: number | null;
     activeInGroups: string[];
   }>();
 
@@ -252,6 +271,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
           mean: node.mean,
           jitter: node.jitter,
           provider: node.provider,
+          backoff_rounds: node.backoff_rounds,
           activeInGroups: []
         });
       }
@@ -307,8 +327,8 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                           <Zap className="w-4 h-4 text-muted-foreground/50" />
                         ) : (
                           <>
-                            <Zap className={`w-3.5 h-3.5 ${activeNode.delay < 150 ? "text-emerald-500" : "text-amber-500"}`} />
-                            <span className={`font-mono text-[13px] font-bold ${activeNode.delay < 150 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-500"}`}>{activeNode.delay}</span>
+                            <Zap className={`w-3.5 h-3.5 ${getColorClass(activeNode.delay, "text")}`} />
+                            <span className={`font-mono text-[13px] font-bold ${getColorClass(activeNode.delay, "text")}`}>{activeNode.delay}</span>
                           </>
                         )}
                       </div>
@@ -427,15 +447,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground/70" />
                         ) : (
                           <div
-                            className={`w-2.5 h-2.5 rounded-full ${
-                              node.delay === null
-                                ? "bg-rose-500/50"
-                                : node.delay < 150
-                                ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
-                                : node.delay < 300
-                                ? "bg-amber-500"
-                                : "bg-rose-500"
-                            }`}
+                            className={`w-2.5 h-2.5 rounded-full ${getColorClass(node.delay, "bg")}`}
                           />
                         )}
                       </div>
@@ -443,34 +455,43 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                     <td className={`px-4 py-3 min-w-[200px] max-w-[400px] font-medium ${node.activeInGroups.length > 0 ? "text-primary" : "text-foreground"}`}>
                       <div className="flex flex-col gap-1.5">
                         <span className="truncate">{node.name}</span>
-                        {node.provider && (
-                          <div className="flex">
-                            <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md truncate max-w-full border border-border/50 whitespace-nowrap">
-                              {node.provider}
-                            </span>
+                        {(node.provider || (node.backoff_rounds && node.backoff_rounds > 0)) && (
+                          <div className="flex items-center gap-1.5">
+                            {node.provider && (
+                              <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md border border-border/50 whitespace-nowrap">
+                                {node.provider}
+                              </span>
+                            )}
+                            {node.backoff_rounds && node.backoff_rounds > 0 && (
+                              <span className="text-[10px] font-medium bg-rose-500/10 text-rose-500 px-1.5 py-0.5 rounded-md border border-rose-500/20 whitespace-nowrap">
+                                Backoff: {node.backoff_rounds}
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
                     </td>
                     <td className="px-4 py-3 font-mono">
                       {node.delay === null ? (
-                        <div className="flex items-center gap-1.5 text-muted-foreground">
-                          {isTesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <WifiOff className="w-3.5 h-3.5" />}
-                          <span>{isTesting ? "Testing..." : "Timeout"}</span>
+                        <div className={`flex items-center gap-1.5 ${isTesting && (!node.backoff_rounds || node.backoff_rounds === 0) ? "text-muted-foreground" : "text-rose-500 dark:text-rose-400 font-medium"}`}>
+                          {isTesting && (!node.backoff_rounds || node.backoff_rounds === 0) ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <WifiOff className="w-3.5 h-3.5" />
+                          )}
+                          <span>
+                            {isTesting && (!node.backoff_rounds || node.backoff_rounds === 0)
+                              ? "Testing..."
+                              : "Timeout"}
+                          </span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5">
                           <Zap
-                            className={`w-3.5 h-3.5 ${
-                              node.delay < 150 ? "text-emerald-500" : "text-muted-foreground"
-                            }`}
+                            className={`w-3.5 h-3.5 ${getColorClass(node.delay, "text")}`}
                           />
                           <span
-                            className={
-                              node.delay < 150
-                                ? "text-emerald-600 dark:text-emerald-400 font-semibold"
-                                : "text-muted-foreground"
-                            }
+                            className={`font-semibold ${getColorClass(node.delay, "text")}`}
                             title="Score = Mean + Jitter"
                           >
                             {node.delay}
@@ -483,7 +504,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                         <div>
                           <span className="text-foreground/70">{node.mean}ms</span> <span className="opacity-50">avg</span>
                           <br />
-                          <span className="text-amber-500/80">±{node.jitter}ms</span> <span className="opacity-50">jit</span>
+                          <span className={getJitterColorClass(node.jitter)}>±{node.jitter}ms</span> <span className="opacity-50">jit</span>
                         </div>
                       )}
                     </td>

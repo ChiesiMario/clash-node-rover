@@ -165,17 +165,42 @@ export function Settings() {
               />
               <p className="text-xs text-muted-foreground">Maximum number of simultaneous ping requests to send.</p>
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Ping Count</label>
-              <input
-                type="number"
-                value={config.ping_count}
-                onChange={(e) => setConfig({ ...config, ping_count: parseInt(e.target.value) || 3 })}
-                className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="3"
-                min="1"
-              />
-              <p className="text-xs text-muted-foreground">Number of times to test each node. Higher values improve jitter calculation but take longer.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Ping Count</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={config.ping_count || 1}
+                    onChange={(e) => setConfig({ ...config, ping_count: parseInt(e.target.value) || 1 })}
+                    className="w-full bg-background border border-border rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  />
+                  <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-muted-foreground text-sm">
+                    times
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Number of pings per node for better average</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">Max Backoff Times</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="10"
+                    value={config.max_backoff_times ?? 5}
+                    onChange={(e) => setConfig({ ...config, max_backoff_times: parseInt(e.target.value) || 0 })}
+                    className="w-full bg-background border border-border rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+                  />
+                  <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-muted-foreground text-sm">
+                    rounds
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Max rounds to skip failing nodes</p>
+              </div>
             </div>
           </div>
         </div>

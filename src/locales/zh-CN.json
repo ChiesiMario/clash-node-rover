@@ -65,7 +65,13 @@
     "score": "分数",
     "mean_jitter": "平均 / 抖动",
     "active_in_groups": "活跃于群组",
-    "testing": "测试中..."
+    "testing": "测试中...",
+    "history_chart": "历史测速效能",
+    "24h": "24 小时",
+    "3d": "3 天",
+    "7d": "7 天",
+    "no_history": "目前尚无历史数据。",
+    "mean": "平均"
   },
   "settings": {
     "loading": "加载设置中...",

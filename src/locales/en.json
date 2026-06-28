@@ -65,7 +65,13 @@
     "score": "Score",
     "mean_jitter": "Mean/Jitter",
     "active_in_groups": "Active In Groups",
-    "testing": "Testing..."
+    "testing": "Testing...",
+    "history_chart": "Historical Performance",
+    "24h": "24H",
+    "3d": "3 Days",
+    "7d": "7 Days",
+    "no_history": "No historical data available yet.",
+    "mean": "Mean"
   },
   "settings": {
     "loading": "Loading settings...",

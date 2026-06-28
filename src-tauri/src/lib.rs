@@ -11,6 +11,8 @@ use tauri::{
 use config::Config;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
+use tauri_plugin_autostart::MacosLauncher;
+use std::env;
 
 struct AppState {
     pub config: Mutex<Config>,
@@ -132,7 +134,18 @@ fn toggle_pause(app: tauri::AppHandle, state: tauri::State<AppState>) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
         .setup(|app| {
+            let args: Vec<String> = env::args().collect();
+            let is_autostart = args.contains(&"--autostart".to_string());
+            
+            if !is_autostart {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+            
             let cfg = config::load_config(app.handle());
             
             // 建立 db (若出錯直接印出或由上層處理)
@@ -156,9 +169,11 @@ pub fn run() {
             watchdog::start_watchdog(app.handle().clone());
             
             // 建立系統列選單與圖示
-            let show_i = MenuItem::with_id(app, "show", "開啟儀表板", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "結束程式", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+            let show_i = MenuItem::with_id(app, "show", "Show Dashboard", true, None::<&str>)?;
+            let force_test_i = MenuItem::with_id(app, "force_test", "Force Test", true, None::<&str>)?;
+            let toggle_pause_i = MenuItem::with_id(app, "toggle_pause", "Pause / Resume", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show_i, &force_test_i, &toggle_pause_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -172,6 +187,17 @@ pub fn run() {
                             let _ = window.show();
                             let _ = window.set_focus();
                         }
+                    }
+                    "force_test" => {
+                        let state = app.state::<AppState>();
+                        state.force_test.notify_one();
+                    }
+                    "toggle_pause" => {
+                        let state = app.state::<AppState>();
+                        let mut status = state.status.lock().unwrap();
+                        status.is_paused = !status.is_paused;
+                        let _ = app.emit("status_update", &*status);
+                        state.force_test.notify_one();
                     }
                     _ => {}
                 })
@@ -191,6 +217,13 @@ pub fn run() {
                 .build(app)?;
             
             Ok(())
+        })
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             get_config,

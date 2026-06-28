@@ -6,6 +6,8 @@ export function Settings() {
   const [config, setConfig] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
+  const [autostartEnabled, setAutostartEnabled] = useState(false);
+  const [autostartLoading, setAutostartLoading] = useState(true);
 
   useEffect(() => {
     invoke("get_config").then((cfg: any) => {
@@ -16,7 +18,31 @@ export function Settings() {
           .catch((e) => console.error("Failed to fetch groups on mount:", e));
       }
     });
+
+    import('@tauri-apps/plugin-autostart').then(({ isEnabled }) => {
+      isEnabled().then(setAutostartEnabled).finally(() => setAutostartLoading(false));
+    }).catch((e) => {
+      console.error("Failed to load autostart plugin:", e);
+      setAutostartLoading(false);
+    });
   }, []);
+
+  const handleToggleAutostart = async (checked: boolean) => {
+    setAutostartLoading(true);
+    try {
+      const { enable, disable } = await import('@tauri-apps/plugin-autostart');
+      if (checked) {
+        await enable();
+      } else {
+        await disable();
+      }
+      setAutostartEnabled(checked);
+    } catch (e) {
+      console.error("Autostart error:", e);
+      alert("Failed to toggle auto-start: " + e);
+    }
+    setAutostartLoading(false);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -292,6 +318,33 @@ export function Settings() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-medium">System Integration</h2>
+              <p className="text-sm text-muted-foreground mt-1">Configure how Node Rover integrates with your operating system.</p>
+            </div>
+          </div>
+          <div className="space-y-4 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-sm font-medium text-foreground">Auto-Start on Boot (Silent Boot)</label>
+                <p className="text-xs text-muted-foreground mt-0.5">Start Node Rover automatically when you log in. It will start silently in the system tray.</p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer relative">
+                {autostartLoading && <span className="absolute -left-6 text-muted-foreground animate-spin">◷</span>}
+                <input
+                  type="checkbox"
+                  checked={autostartEnabled}
+                  disabled={autostartLoading}
+                  onChange={(e) => handleToggleAutostart(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer disabled:opacity-50"
+                />
+              </label>
+            </div>
+          </div>
         </div>
       </div>
     </div>

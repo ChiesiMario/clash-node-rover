@@ -4,5 +4,5 @@
 )]
 
 fn main() {
-    tauri_app_lib::run();
+    clash_node_rover_lib::run();
 }

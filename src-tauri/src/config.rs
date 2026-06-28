@@ -23,6 +23,7 @@ pub struct Config {
     pub locked_groups: Vec<String>,
     pub ping_count: u32,
     pub group_regions: std::collections::HashMap<String, Vec<String>>,
+    pub has_completed_setup: bool,
 }
 
 impl Default for Config {
@@ -51,6 +52,7 @@ impl Default for Config {
             locked_groups: vec![],
             ping_count: 3,
             group_regions: std::collections::HashMap::new(),
+            has_completed_setup: false,
         }
     }
 }

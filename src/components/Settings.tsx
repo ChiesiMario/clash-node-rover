@@ -8,7 +8,14 @@ export function Settings() {
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
 
   useEffect(() => {
-    invoke("get_config").then((cfg) => setConfig(cfg));
+    invoke("get_config").then((cfg: any) => {
+      setConfig(cfg);
+      if (cfg && cfg.api_url) {
+        invoke<string[]>("get_clash_selectors")
+          .then((groups) => setAvailableGroups(groups))
+          .catch((e) => console.error("Failed to fetch groups on mount:", e));
+      }
+    });
   }, []);
 
   const handleSave = async () => {

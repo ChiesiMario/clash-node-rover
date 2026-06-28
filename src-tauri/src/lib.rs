@@ -35,6 +35,12 @@ fn save_config(app: AppHandle, state: tauri::State<AppState>, new_config: Config
 }
 
 #[tauri::command]
+async fn verify_clash_api(api_url: String, api_secret: String) -> Result<bool, String> {
+    let api = clash::ClashApi::new(&api_url, &api_secret);
+    api.verify_connection().await.map(|_| true).map_err(|e| e)
+}
+
+#[tauri::command]
 async fn get_clash_selectors(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
     let config = state.config.lock().unwrap().clone();
     let api = clash::ClashApi::new(&config.api_url, &config.api_secret);
@@ -189,6 +195,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_config,
             save_config,
+            verify_clash_api,
             get_clash_selectors,
             force_test,
             get_logs,

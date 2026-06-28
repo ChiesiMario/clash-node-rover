@@ -98,6 +98,7 @@ async fn perform_http_test(node_name: &str, config: &crate::config::Config, clas
 
 pub fn start_watchdog(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut has_logged_empty_groups = false;
         loop {
             // 讀取最新的 config
             let (config, force_test) = {
@@ -154,6 +155,19 @@ pub fn start_watchdog(app: AppHandle) {
                 continue;
             }
 
+            if config.target_groups.is_empty() {
+                if !has_logged_empty_groups {
+                    db.insert_log("INFO", "未設定監控群組，引擎進入閒置狀態。");
+                    has_logged_empty_groups = true;
+                }
+                status.next_check_in = 0;
+                let _ = app.emit("status_update", &status);
+                sleep(Duration::from_secs(3)).await;
+                continue;
+            } else {
+                has_logged_empty_groups = false;
+            }
+
             // 2. 開始測速演算法
             db.insert_log("INFO", "==================================================");
             db.insert_log("INFO", "[測速任務開始]");
@@ -161,8 +175,26 @@ pub fn start_watchdog(app: AppHandle) {
             db.insert_log("INFO", &format!("- 容忍度 (Tolerance): {} 分 (新節點需領先大於此分數才會切換)", current_tolerance));
             db.insert_log("INFO", &format!("- 併發數 (Max Concurrency): {}", config.max_concurrent));
             db.insert_log("INFO", &format!("- 測試次數 (Ping Count): {} 次", std::cmp::max(1, config.ping_count)));
+            let mut actual_enable_http_test = false;
             if config.enable_browser_test {
-                db.insert_log("INFO", &format!("- HTTP 測試: 啟用 (群組: {}, 代理: {})", config.dedicated_test_group, config.clash_proxy_url));
+                if config.dedicated_test_group.is_empty() {
+                    db.insert_log("INFO", "- HTTP 測試: 跳過 (原因: 未設定專屬測速群組)");
+                } else if config.clash_proxy_url.is_empty() {
+                    db.insert_log("INFO", "- HTTP 測試: 跳過 (原因: 未設定 Proxy 位址)");
+                } else if config.browser_test_urls.is_empty() {
+                    db.insert_log("INFO", "- HTTP 測試: 跳過 (原因: 未設定測試網址)");
+                } else {
+                    let host_port = config.clash_proxy_url.trim_start_matches("http://").trim_start_matches("https://");
+                    match tokio::time::timeout(std::time::Duration::from_secs(2), tokio::net::TcpStream::connect(host_port)).await {
+                        Ok(Ok(_)) => {
+                            db.insert_log("INFO", &format!("- HTTP 測試: 啟用 (群組: {}, 代理: {})", config.dedicated_test_group, config.clash_proxy_url));
+                            actual_enable_http_test = true;
+                        },
+                        _ => {
+                            db.insert_log("INFO", &format!("- HTTP 測試: 跳過 (原因: 代理伺服器 {} 無法連通)", config.clash_proxy_url));
+                        }
+                    }
+                }
             } else {
                 db.insert_log("INFO", "- HTTP 測試: 未啟用");
             }
@@ -437,7 +469,7 @@ pub fn start_watchdog(app: AppHandle) {
                                 let mut is_good = true;
 
                                 // 如果啟用 HTTP 測試防護
-                                if config.enable_browser_test && !config.dedicated_test_group.is_empty() && !config.clash_proxy_url.is_empty() && !config.browser_test_urls.is_empty() {
+                                if actual_enable_http_test {
                                     is_good = if let Some(&cached_res) = http_test_cache.get(node_name) {
                                         if cached_res {
                                             db.insert_log("DEBUG", "  -> 沿用跨群組快取: HTTP 測試成功。");

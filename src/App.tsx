@@ -4,6 +4,7 @@ import { Activity, Settings2, TerminalSquare } from "lucide-react";
 import { Dashboard, AppStatus } from "./components/Dashboard";
 import { Settings } from "./components/Settings";
 import { Console } from "./components/Console";
+import { SetupWizard } from "./components/SetupWizard";
 import "./App.css";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -12,8 +13,19 @@ import { listen } from "@tauri-apps/api/event";
 function App() {
   const [status, setStatus] = useState<AppStatus | null>(null);
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [config, setConfig] = useState<any>(null);
+  const [isConfigLoaded, setIsConfigLoaded] = useState(false);
+
+  const loadConfig = () => {
+    invoke<any>("get_config").then((cfg) => {
+      setConfig(cfg);
+      setIsConfigLoaded(true);
+    }).catch(console.error);
+  };
 
   useEffect(() => {
+    loadConfig();
+
     invoke<AppStatus>("get_status").then((initialStatus) => {
       setStatus(initialStatus);
     }).catch(console.error);
@@ -26,8 +38,24 @@ function App() {
       unlisten.then((f) => f());
     };
   }, []);
+
+  if (!isConfigLoaded) {
+    return <div className="h-screen flex items-center justify-center"><Activity className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (config && config.has_completed_setup === false) {
+    return (
+      <div className="h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground">
+        <SetupWizard 
+          initialConfig={config} 
+          onComplete={loadConfig} 
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground">
+    <div className="flex flex-col h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground relative">
       <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
         <Tabs.List className="flex border-b border-border bg-muted/30 px-4 py-2 gap-1">
           <Tabs.Trigger

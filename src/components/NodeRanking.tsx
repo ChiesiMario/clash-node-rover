@@ -231,13 +231,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
     );
   }
 
-  if (groups.length === 0) {
-    return (
-      <div className="p-8 rounded-xl border border-border bg-card/50 text-center text-muted-foreground animate-pulse">
-        Waiting for next speed test cycle...
-      </div>
-    );
-  }
+  // Removed the early return for groups.length === 0
 
   // Deduplicate and aggregate nodes
   const allNodesMap = new Map<string, {
@@ -268,6 +262,19 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
     });
   });
 
+  const displayGroups = [...groups];
+  if (targetGroups) {
+    targetGroups.forEach(tg => {
+      if (!displayGroups.find(g => g.group_name === tg)) {
+        displayGroups.push({
+          group_name: tg,
+          nodes: [],
+          is_locked: false,
+        });
+      }
+    });
+  }
+
   const unifiedNodes = Array.from(allNodesMap.values()).sort((a, b) => {
     if (a.delay === null && b.delay === null) return 0;
     if (a.delay === null) return 1;
@@ -282,9 +289,10 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
       <div className="space-y-3">
         <h2 className="text-xl font-semibold tracking-tight">Monitored Groups</h2>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 items-start">
-          {groups.map((group) => {
+          {displayGroups.map((group) => {
             const activeNode = group.nodes.find((n) => n.is_active);
             const currentValue = selectedNodes[group.group_name] || (activeNode ? activeNode.name : "");
+            const hasNodes = group.nodes.length > 0;
 
             return (
               <div key={group.group_name} className="flex flex-col justify-between gap-3 bg-muted/30 p-4 rounded-xl border border-border transition-colors hover:bg-muted/50">
@@ -295,7 +303,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                   <div className="flex flex-col gap-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2 w-full">
                       <div className="shrink-0 flex items-center gap-1">
-                        {activeNode?.delay === null || activeNode?.delay === undefined ? (
+                        {!hasNodes || activeNode?.delay === null || activeNode?.delay === undefined ? (
                           <Zap className="w-4 h-4 text-muted-foreground/50" />
                         ) : (
                           <>
@@ -305,7 +313,9 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                         )}
                       </div>
                       <div className="flex flex-col gap-1 flex-1 min-w-0">
-                        <span className="font-medium text-foreground truncate">{activeNode ? activeNode.name : "Waiting..."}</span>
+                        <span className={`font-medium truncate ${!hasNodes ? "text-muted-foreground animate-pulse" : "text-foreground"}`}>
+                          {!hasNodes ? "Syncing nodes..." : activeNode ? activeNode.name : "Waiting..."}
+                        </span>
                       </div>
                     </div>
                     {activeNode?.provider && (
@@ -346,11 +356,17 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                   {/* Manual Selection Dropdown */}
                   {group.is_locked ? (
                     <div className="flex items-center gap-2 w-full animate-in slide-in-from-top-2 duration-200 fade-in">
-                      <CustomNodeSelect
-                        nodes={group.nodes}
-                        value={currentValue}
-                        onChange={(val) => handleManualSwitch(group.group_name, val)}
-                      />
+                      {hasNodes ? (
+                        <CustomNodeSelect
+                          nodes={group.nodes}
+                          value={currentValue}
+                          onChange={(val) => handleManualSwitch(group.group_name, val)}
+                        />
+                      ) : (
+                        <div className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-muted-foreground shadow-sm">
+                          Loading nodes...
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2 pt-2 animate-in slide-in-from-top-2 duration-200 fade-in">

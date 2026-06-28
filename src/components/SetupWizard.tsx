@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Server, Zap, CheckCircle2, Loader2, ArrowRight, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface SetupWizardProps {
   initialConfig: any;
@@ -8,6 +9,7 @@ interface SetupWizardProps {
 }
 
 export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
+  const { t } = useTranslation();
   const [step, setStep] = useState(1);
   const [config, setConfig] = useState(initialConfig || {
     api_url: "http://127.0.0.1:9090",
@@ -84,14 +86,14 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
         {/* Header */}
         <div className="px-6 sm:px-8 py-8 flex justify-between items-center shrink-0">
           <div>
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Setup Wizard</h1>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight">{t('setup.title', 'Setup Wizard')}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Step {step} of 4
+              {t('setup.step_x_of_4', 'Step {{step}} of 4', { step })}
             </p>
           </div>
           {step < 4 && (
             <button onClick={skipSetup} className="text-sm font-medium text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors">
-              Skip <ArrowRight className="w-4 h-4" />
+              {t('setup.skip', 'Skip')} <ArrowRight className="w-4 h-4" />
             </button>
           )}
         </div>
@@ -103,16 +105,16 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
               <div className="mx-auto w-16 h-16 bg-primary/10 text-primary rounded-2xl flex items-center justify-center mb-6">
                 <Zap className="w-8 h-8" />
               </div>
-              <h2 className="text-3xl font-bold tracking-tight">Welcome to Clash Node Rover</h2>
+              <h2 className="text-3xl font-bold tracking-tight">{t('setup.welcome', 'Welcome to Clash Node Rover')}</h2>
               <p className="text-muted-foreground text-lg max-w-md mx-auto">
-                An intelligent, high-performance background engine that monitors and automatically switches your Clash proxies to the fastest nodes available.
+                {t('setup.welcome_desc', 'An intelligent, high-performance background engine that monitors and automatically switches your Clash proxies to the fastest nodes available.')}
               </p>
               <div className="pt-8">
                 <button 
                   onClick={() => setStep(2)}
                   className="bg-primary text-primary-foreground px-8 py-3 rounded-full font-medium text-lg shadow-lg hover:shadow-xl hover:opacity-90 transition-all hover:scale-105"
                 >
-                  Get Started
+                  {t('setup.get_started', 'Get Started')}
                 </button>
               </div>
             </div>
@@ -122,15 +124,15 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
             <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-500">
               <div className="space-y-8 flex-1 pb-8">
                 <div className="space-y-2">
-                <h2 className="text-2xl font-bold tracking-tight">Connect to Clash API</h2>
+                <h2 className="text-2xl font-bold tracking-tight">{t('setup.connect_api', 'Connect to Clash API')}</h2>
                 <p className="text-muted-foreground">
-                  Rover needs to communicate with your Clash or Clash Meta core via its External Controller API.
+                  {t('setup.connect_api_desc', 'Rover needs to communicate with your Clash or Clash Meta core via its External Controller API.')}
                 </p>
               </div>
               
               <div className="space-y-4 bg-muted/30 p-6 rounded-xl border border-border">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">API URL</label>
+                  <label className="text-sm font-medium text-foreground">{t('setup.api_url', 'API URL')}</label>
                   <input
                     type="text"
                     value={config.api_url}
@@ -140,7 +142,7 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-foreground">API Secret (Optional)</label>
+                  <label className="text-sm font-medium text-foreground">{t('setup.api_secret', 'API Secret (Optional)')}</label>
                   <input
                     type="password"
                     value={config.api_secret}
@@ -157,10 +159,10 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                     className="flex items-center gap-2 bg-secondary text-secondary-foreground px-4 py-2 rounded-md font-medium text-sm hover:bg-secondary/80 transition-colors"
                   >
                     {isTestingApi ? <Loader2 className="w-4 h-4 animate-spin" /> : <Server className="w-4 h-4" />}
-                    Test Connection
+                    {t('setup.test_connection', 'Test Connection')}
                   </button>
                   
-                  {apiSuccess && <p className="text-emerald-500 text-sm mt-3 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4"/> Connection successful!</p>}
+                  {apiSuccess && <p className="text-emerald-500 text-sm mt-3 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4"/> {t('setup.connection_success', 'Connection successful!')}</p>}
                   {apiError && <p className="text-red-500 text-sm mt-3 flex items-center gap-1.5"><X className="w-4 h-4"/> {apiError}</p>}
                 </div>
               </div>
@@ -172,7 +174,7 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                   disabled={!apiSuccess}
                   className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md font-medium flex items-center gap-2 hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
                 >
-                  Continue <ArrowRight className="w-4 h-4" />
+                  {t('setup.continue', 'Continue')} <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -182,9 +184,9 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
             <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-500">
               <div className="space-y-6 flex-1 pb-8">
                 <div className="space-y-2">
-                <h2 className="text-2xl font-bold tracking-tight">Select Monitored Groups</h2>
+                <h2 className="text-2xl font-bold tracking-tight">{t('setup.select_groups', 'Select Monitored Groups')}</h2>
                 <p className="text-muted-foreground">
-                  Choose which proxy groups (Selectors) you want Rover to continuously speed-test and optimize.
+                  {t('setup.select_groups_desc', 'Choose which proxy groups (Selectors) you want Rover to continuously speed-test and optimize.')}
                 </p>
               </div>
 
@@ -192,7 +194,7 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                 {isLoadingGroups ? (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-2 pt-12">
                     <Loader2 className="w-6 h-6 animate-spin" />
-                    <p className="text-sm">Fetching groups from Clash...</p>
+                    <p className="text-sm">{t('setup.fetching_groups', 'Fetching groups from Clash...')}</p>
                   </div>
                 ) : availableGroups.length > 0 ? (
                   <div className="grid grid-cols-2 gap-3">
@@ -215,7 +217,7 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground pt-12">
-                    <p>No groups found or API disconnected.</p>
+                    <p>{t('setup.no_groups_found', 'No groups found or API disconnected.')}</p>
                   </div>
                 )}
               </div>
@@ -226,13 +228,13 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                   onClick={() => setStep(2)}
                   className="text-muted-foreground hover:text-foreground px-4 py-2 font-medium transition-colors"
                 >
-                  Back
+                  {t('setup.back', 'Back')}
                 </button>
                 <button 
                   onClick={() => setStep(4)}
                   className="bg-primary text-primary-foreground px-6 py-2.5 rounded-md font-medium flex items-center gap-2 hover:opacity-90 transition-opacity shadow-sm"
                 >
-                  Continue <ArrowRight className="w-4 h-4" />
+                  {t('setup.continue', 'Continue')} <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -244,9 +246,9 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                 <CheckCircle2 className="w-10 h-10" />
               </div>
               <div className="space-y-3">
-                <h2 className="text-3xl font-bold tracking-tight">You're All Set!</h2>
+                <h2 className="text-3xl font-bold tracking-tight">{t('setup.all_set', "You're All Set!")}</h2>
                 <p className="text-muted-foreground text-lg max-w-md mx-auto">
-                  Clash Node Rover is now ready to optimize your network experience. You can always tweak advanced rules, latency tolerance, and HTTP verification in the Settings tab.
+                  {t('setup.all_set_desc', 'Clash Node Rover is now ready to optimize your network experience. You can always tweak advanced rules, latency tolerance, and HTTP verification in the Settings tab.')}
                 </p>
               </div>
               <div className="pt-8">
@@ -256,7 +258,7 @@ export function SetupWizard({ initialConfig, onComplete }: SetupWizardProps) {
                   className="bg-primary text-primary-foreground px-10 py-3.5 rounded-full font-medium text-lg shadow-lg hover:shadow-xl hover:opacity-90 transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100 flex items-center gap-2 mx-auto"
                 >
                   {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-                  Enter Dashboard
+                  {t('setup.enter_dashboard', 'Enter Dashboard')}
                 </button>
               </div>
             </div>

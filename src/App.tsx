@@ -9,6 +9,7 @@ import "./App.css";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 
 function App() {
   const [status, setStatus] = useState<AppStatus | null>(null);
@@ -16,9 +17,14 @@ function App() {
   const [config, setConfig] = useState<any>(null);
   const [isConfigLoaded, setIsConfigLoaded] = useState(false);
 
+  const { t, i18n } = useTranslation();
+
   const loadConfig = () => {
     invoke<any>("get_config").then((cfg) => {
       setConfig(cfg);
+      if (cfg.language && cfg.language !== "auto" && cfg.language !== i18n.language) {
+        i18n.changeLanguage(cfg.language);
+      }
       setIsConfigLoaded(true);
     }).catch(console.error);
   };
@@ -63,21 +69,21 @@ function App() {
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
           >
             <Activity className="w-4 h-4" />
-            <span className="font-medium text-sm">Dashboard</span>
+            <span className="font-medium text-sm">{t('tabs.dashboard', 'Dashboard')}</span>
           </Tabs.Trigger>
           <Tabs.Trigger
             value="settings"
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
           >
             <Settings2 className="w-4 h-4" />
-            <span className="font-medium text-sm">Settings</span>
+            <span className="font-medium text-sm">{t('tabs.settings', 'Settings')}</span>
           </Tabs.Trigger>
           <Tabs.Trigger
             value="console"
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
           >
             <TerminalSquare className="w-4 h-4" />
-            <span className="font-medium text-sm">Console</span>
+            <span className="font-medium text-sm">{t('tabs.console', 'Console')}</span>
           </Tabs.Trigger>
         </Tabs.List>
 

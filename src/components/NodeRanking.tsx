@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { Zap, WifiOff, Loader2, ChevronDown } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface NodeResult {
   name: string;
@@ -37,6 +38,7 @@ function CustomNodeSelect({
   value: string; 
   onChange: (val: string) => void;
 }) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [alignment, setAlignment] = useState<"left" | "right">("left");
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -76,7 +78,7 @@ function CustomNodeSelect({
                {selectedNode.provider}
              </span>
            )}
-           <span className="truncate font-medium text-foreground">{selectedNode ? selectedNode.name : "Select node..."}</span>
+           <span className="truncate font-medium text-foreground">{selectedNode ? selectedNode.name : t('ranking.select_node', 'Select node...')}</span>
         </div>
         <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
       </div>
@@ -92,7 +94,7 @@ function CustomNodeSelect({
               <div className="flex items-center gap-1.5 shrink-0">
                  {node.delay === null ? (
                    <span className="text-[11px] font-medium text-rose-500 dark:text-rose-400">
-                     {node.backoff_rounds && node.backoff_rounds > 0 ? `Backoff: ${node.backoff_rounds}` : "Timeout"}
+                     {node.backoff_rounds && node.backoff_rounds > 0 ? `Backoff: ${node.backoff_rounds}` : t('ranking.timeout', 'Timeout')}
                    </span>
                  ) : (
                    <>
@@ -134,6 +136,7 @@ const getJitterColorClass = (jitter: number) => {
 };
 
 export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRankingProps = {}) {
+  const { t } = useTranslation();
   const [groups, setGroups] = useState<GroupResult[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<Record<string, string>>({});
 
@@ -213,35 +216,35 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
     return (
       <div className="space-y-8 animate-in fade-in duration-300">
         <div className="space-y-3">
-          <h2 className="text-xl font-semibold tracking-tight">Monitored Groups</h2>
+          <h2 className="text-xl font-semibold tracking-tight">{t('ranking.monitored_groups', 'Monitored Groups')}</h2>
           <div className="p-8 rounded-xl border border-dashed border-border bg-card/30 flex flex-col items-center justify-center gap-4">
             <div className="text-muted-foreground text-center">
-              <p className="font-medium text-foreground mb-1">No groups configured</p>
-              <p className="text-sm">You haven't added any Clash proxy groups to monitor yet.</p>
+              <p className="font-medium text-foreground mb-1">{t('ranking.no_groups_configured', 'No groups configured')}</p>
+              <p className="text-sm">{t('ranking.no_groups_desc', "You haven't added any Clash proxy groups to monitor yet.")}</p>
             </div>
             <button 
               onClick={() => onNavigate?.("settings")}
               className="bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium text-sm transition-opacity hover:opacity-90 shadow-sm"
             >
-              Go to Settings
+              {t('ranking.go_to_settings', 'Go to Settings')}
             </button>
           </div>
         </div>
 
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold tracking-tight">Node Ranking</h2>
-            <span className="text-sm text-muted-foreground">0 nodes</span>
+            <h2 className="text-xl font-semibold tracking-tight">{t('ranking.node_ranking', 'Node Ranking')}</h2>
+            <span className="text-sm text-muted-foreground">{t('ranking.0_nodes', '0 nodes')}</span>
           </div>
           <div className="p-8 rounded-xl border border-dashed border-border bg-card/30 flex flex-col items-center justify-center gap-4">
             <div className="text-muted-foreground text-center text-sm">
-              <p>Add some groups in Settings to discover and rank your nodes here.</p>
+              <p>{t('ranking.add_groups_desc', 'Add some groups in Settings to discover and rank your nodes here.')}</p>
             </div>
             <button 
               onClick={() => onNavigate?.("settings")}
               className="bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium text-sm transition-opacity hover:opacity-90 shadow-sm"
             >
-              Go to Settings
+              {t('ranking.go_to_settings', 'Go to Settings')}
             </button>
           </div>
         </div>
@@ -307,7 +310,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
       
       {/* Groups Section */}
       <div className="space-y-3">
-        <h2 className="text-xl font-semibold tracking-tight">Monitored Groups</h2>
+        <h2 className="text-xl font-semibold tracking-tight">{t('ranking.monitored_groups', 'Monitored Groups')}</h2>
         <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4 items-start">
           {displayGroups.map((group) => {
             const activeNode = group.nodes.find((n) => n.is_active);
@@ -334,7 +337,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                       </div>
                       <div className="flex flex-col gap-1 flex-1 min-w-0">
                         <span className={`font-medium truncate ${!hasNodes ? "text-muted-foreground animate-pulse" : "text-foreground"}`}>
-                          {!hasNodes ? "Syncing nodes..." : activeNode ? activeNode.name : "Waiting..."}
+                          {!hasNodes ? t('ranking.syncing_nodes', 'Syncing nodes...') : activeNode ? activeNode.name : t('ranking.waiting', 'Waiting...')}
                         </span>
                       </div>
                     </div>
@@ -359,7 +362,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                           : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                       }`}
                     >
-                      自動切換
+                      {t('ranking.auto_switch', 'Auto Switch')}
                     </button>
                     <button
                       onClick={() => !group.is_locked && handleToggleLock(group.group_name, false)}
@@ -369,7 +372,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                           : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                       }`}
                     >
-                      手動切換
+                      {t('ranking.manual_switch', 'Manual Switch')}
                     </button>
                   </div>
 
@@ -384,13 +387,13 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                         />
                       ) : (
                         <div className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm text-muted-foreground shadow-sm">
-                          Loading nodes...
+                          {t('ranking.loading_nodes', 'Loading nodes...')}
                         </div>
                       )}
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2 pt-2 animate-in slide-in-from-top-2 duration-200 fade-in">
-                      <span className="text-[11px] font-medium text-muted-foreground w-full -mb-0.5">Region Filter:</span>
+                      <span className="text-[11px] font-medium text-muted-foreground w-full -mb-0.5">{t('ranking.region_filter', 'Region Filter:')}</span>
                       {AVAILABLE_REGIONS.map((region) => {
                         const isSelected = (group.selected_regions || []).includes(region);
                         return (
@@ -419,8 +422,8 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
       {/* Unified Nodes Ranking Section */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold tracking-tight">Node Ranking</h2>
-          <span className="text-sm text-muted-foreground">{unifiedNodes.length} nodes</span>
+          <h2 className="text-xl font-semibold tracking-tight">{t('ranking.node_ranking', 'Node Ranking')}</h2>
+          <span className="text-sm text-muted-foreground">{t('ranking.n_nodes', '{{count}} nodes', { count: unifiedNodes.length })}</span>
         </div>
         
         <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -428,11 +431,11 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium w-12 text-center">Status</th>
-                  <th className="px-4 py-3 font-medium">Node Name</th>
-                  <th className="px-4 py-3 font-medium w-32">Score</th>
-                  <th className="px-4 py-3 font-medium w-32">Mean/Jitter</th>
-                  <th className="px-4 py-3 font-medium w-48">Active In Groups</th>
+                  <th className="px-4 py-3 font-medium w-12 text-center">{t('ranking.status', 'Status')}</th>
+                  <th className="px-4 py-3 font-medium">{t('ranking.node_name', 'Node Name')}</th>
+                  <th className="px-4 py-3 font-medium w-32">{t('ranking.score', 'Score')}</th>
+                  <th className="px-4 py-3 font-medium w-32">{t('ranking.mean_jitter', 'Mean/Jitter')}</th>
+                  <th className="px-4 py-3 font-medium w-48">{t('ranking.active_in_groups', 'Active In Groups')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
@@ -481,8 +484,8 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                           )}
                           <span>
                             {isTesting && (!node.backoff_rounds || node.backoff_rounds === 0)
-                              ? "Testing..."
-                              : "Timeout"}
+                              ? t('ranking.testing', 'Testing...')
+                              : t('ranking.timeout', 'Timeout')}
                           </span>
                         </div>
                       ) : (

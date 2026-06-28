@@ -24,6 +24,7 @@ pub struct Config {
     pub ping_count: u32,
     pub group_regions: std::collections::HashMap<String, Vec<String>>,
     pub has_completed_setup: bool,
+    pub language: String,
 }
 
 impl Default for Config {
@@ -53,6 +54,7 @@ impl Default for Config {
             ping_count: 3,
             group_regions: std::collections::HashMap::new(),
             has_completed_setup: false,
+            language: "auto".to_string(),
         }
     }
 }

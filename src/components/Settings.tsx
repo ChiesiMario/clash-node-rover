@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Save } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 export function Settings() {
+  const { t, i18n } = useTranslation();
   const [config, setConfig] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [availableGroups, setAvailableGroups] = useState<string[]>([]);
@@ -54,14 +56,14 @@ export function Settings() {
     setSaving(false);
   };
 
-  if (!config) return <div className="p-8 text-muted-foreground">Loading settings...</div>;
+  if (!config) return <div className="p-8 text-muted-foreground">{t('settings.loading', 'Loading settings...')}</div>;
 
   return (
     <div className="p-8 max-w-2xl mx-auto space-y-8 animate-in fade-in duration-300">
       <div className="space-y-2 flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">Configuration</h1>
-          <p className="text-muted-foreground">Manage your Clash API and Node Rover settings.</p>
+          <h1 className="text-3xl font-semibold tracking-tight">{t('settings.configuration', 'Configuration')}</h1>
+          <p className="text-muted-foreground">{t('settings.subtitle', 'Manage your Clash API and Node Rover settings.')}</p>
         </div>
         <button
           onClick={handleSave}
@@ -69,16 +71,16 @@ export function Settings() {
           className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-md hover:opacity-90 transition-opacity disabled:opacity-50 font-medium text-sm shadow-sm"
         >
           <Save className="w-4 h-4" />
-          {saving ? "Saving..." : "Save Changes"}
+          {saving ? t('settings.saving', 'Saving...') : t('settings.save_changes', 'Save Changes')}
         </button>
       </div>
 
       <div className="space-y-6">
         <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
-          <h2 className="text-lg font-medium">API Connection</h2>
+          <h2 className="text-lg font-medium">{t('settings.api_connection', 'API Connection')}</h2>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Clash API URL</label>
+              <label className="text-sm font-medium text-muted-foreground">{t('settings.clash_api_url', 'Clash API URL')}</label>
               <input
                 type="text"
                 value={config.api_url}
@@ -88,7 +90,7 @@ export function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">API Secret (Optional)</label>
+              <label className="text-sm font-medium text-muted-foreground">{t('settings.api_secret', 'API Secret (Optional)')}</label>
               <input
                 type="password"
                 value={config.api_secret}
@@ -102,7 +104,7 @@ export function Settings() {
 
         <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium">Monitored Groups</h2>
+            <h2 className="text-lg font-medium">{t('settings.monitored_groups', 'Monitored Groups')}</h2>
             <button
               onClick={async () => {
                 try {
@@ -114,12 +116,12 @@ export function Settings() {
               }}
               className="text-xs bg-secondary text-secondary-foreground px-3 py-1.5 rounded-md hover:bg-secondary/80 font-medium transition-colors"
             >
-              Fetch Groups
+              {t('settings.fetch_groups', 'Fetch Groups')}
             </button>
           </div>
           
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Select which Clash proxy groups the watchdog should monitor and speed-test.</p>
+            <p className="text-sm text-muted-foreground">{t('settings.monitored_groups_desc', 'Select which Clash proxy groups the watchdog should monitor and speed-test.')}</p>
             
             {availableGroups.length > 0 ? (
               <div className="grid grid-cols-2 gap-3 mt-4">
@@ -150,17 +152,17 @@ export function Settings() {
                   className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                   placeholder="e.g. PROXIES, FALLBACK"
                 />
-                <p className="text-xs text-muted-foreground">Comma separated list of groups. Click "Fetch Groups" to select from Clash API.</p>
+                <p className="text-xs text-muted-foreground">{t('settings.comma_separated_desc', 'Comma separated list of groups. Click "Fetch Groups" to select from Clash API.')}</p>
               </div>
             )}
           </div>
         </div>
 
         <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
-          <h2 className="text-lg font-medium">Advanced Speed Test Algorithm</h2>
+          <h2 className="text-lg font-medium">{t('settings.advanced_algo', 'Advanced Speed Test Algorithm')}</h2>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Switch Tolerance (Score)</label>
+              <label className="text-sm font-medium text-muted-foreground">{t('settings.switch_tolerance', 'Switch Tolerance (Score)')}</label>
               <input
                 type="number"
                 value={config.tolerance}
@@ -168,10 +170,10 @@ export function Settings() {
                 className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 placeholder="10"
               />
-              <p className="text-xs text-muted-foreground">Don't switch if the current node is within this many score points of the best node.</p>
+              <p className="text-xs text-muted-foreground">{t('settings.tolerance_desc', "Don't switch if the current node is within this many score points of the best node.")}</p>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Ping Timeout (ms)</label>
+              <label className="text-sm font-medium text-muted-foreground">{t('settings.ping_timeout', 'Ping Timeout (ms)')}</label>
               <input
                 type="number"
                 value={config.test_timeout}
@@ -181,7 +183,7 @@ export function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-muted-foreground">Max Concurrency</label>
+              <label className="text-sm font-medium text-muted-foreground">{t('settings.max_concurrency', 'Max Concurrency')}</label>
               <input
                 type="number"
                 value={config.max_concurrent}
@@ -189,11 +191,11 @@ export function Settings() {
                 className="w-full bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20"
                 placeholder="10"
               />
-              <p className="text-xs text-muted-foreground">Maximum number of simultaneous ping requests to send.</p>
+              <p className="text-xs text-muted-foreground">{t('settings.max_concurrency_desc', 'Maximum number of simultaneous ping requests to send.')}</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Ping Count</label>
+                <label className="text-sm font-medium text-foreground">{t('settings.ping_count', 'Ping Count')}</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -204,14 +206,14 @@ export function Settings() {
                     className="w-full bg-background border border-border rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                   <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-muted-foreground text-sm">
-                    times
+                    {t('settings.times', 'times')}
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Number of pings per node for better average</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('settings.ping_count_desc', 'Number of pings per node for better average')}</p>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">Max Backoff Times</label>
+                <label className="text-sm font-medium text-foreground">{t('settings.max_backoff_times', 'Max Backoff Times')}</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -222,10 +224,10 @@ export function Settings() {
                     className="w-full bg-background border border-border rounded-md px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all"
                   />
                   <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-muted-foreground text-sm">
-                    rounds
+                    {t('settings.rounds', 'rounds')}
                   </div>
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Max rounds to skip failing nodes</p>
+                <p className="text-xs text-muted-foreground mt-1">{t('settings.max_backoff_desc', 'Max rounds to skip failing nodes')}</p>
               </div>
             </div>
           </div>
@@ -233,9 +235,9 @@ export function Settings() {
 
         <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between">
-            <h2 className="text-lg font-medium">HTTP Proxy Testing (Pre-switch Verification)</h2>
+            <h2 className="text-lg font-medium">{t('settings.http_proxy_test', 'HTTP Proxy Testing (Pre-switch Verification)')}</h2>
             <label className="flex items-center gap-2 cursor-pointer">
-              <span className="text-sm font-medium text-muted-foreground">Enable Testing</span>
+              <span className="text-sm font-medium text-muted-foreground">{t('settings.enable_testing', 'Enable Testing')}</span>
               <input
                 type="checkbox"
                 checked={config.enable_browser_test}
@@ -249,7 +251,7 @@ export function Settings() {
             <div className="space-y-4 pt-2 border-t border-border/50">
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-sm font-medium text-muted-foreground">Dedicated Test Group (Required)</label>
+                  <label className="text-sm font-medium text-muted-foreground">{t('settings.dedicated_test_group', 'Dedicated Test Group (Required)')}</label>
                   {availableGroups.length === 0 && (
                     <button
                       onClick={async () => {
@@ -262,7 +264,7 @@ export function Settings() {
                       }}
                       className="text-[10px] bg-secondary text-secondary-foreground px-2 py-1 rounded-md hover:bg-secondary/80 font-medium transition-colors"
                     >
-                      Fetch Groups
+                      {t('settings.fetch_groups', 'Fetch Groups')}
                     </button>
                   )}
                 </div>
@@ -279,7 +281,7 @@ export function Settings() {
                         value={group} 
                         disabled={config.target_groups.includes(group)}
                       >
-                        {group} {config.target_groups.includes(group) ? "(Used in Monitored)" : ""}
+                        {group} {config.target_groups.includes(group) ? t('settings.used_in_monitored', '(Used in Monitored)') : ""}
                       </option>
                     ))}
                   </select>
@@ -292,11 +294,11 @@ export function Settings() {
                     placeholder="e.g., SpeedTest"
                   />
                 )}
-                <p className="text-xs text-muted-foreground">The system will switch this group to the target node and send requests through the proxy below.</p>
+                <p className="text-xs text-muted-foreground">{t('settings.test_group_desc', 'The system will switch this group to the target node and send requests through the proxy below.')}</p>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">HTTP Proxy Server Address (Required)</label>
+                <label className="text-sm font-medium text-muted-foreground">{t('settings.http_proxy_addr', 'HTTP Proxy Server Address (Required)')}</label>
                 <input
                   type="text"
                   value={config.clash_proxy_url}
@@ -307,14 +309,14 @@ export function Settings() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-muted-foreground">Target Test URLs (One per line)</label>
+                <label className="text-sm font-medium text-muted-foreground">{t('settings.target_urls', 'Target Test URLs (One per line)')}</label>
                 <textarea
                   value={config.browser_test_urls.join('\n')}
                   onChange={(e) => setConfig({ ...config, browser_test_urls: e.target.value.split('\n').filter(s => s.trim() !== '') })}
                   className="w-full h-24 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
                   placeholder="https://www.google.com&#10;https://www.youtube.com"
                 />
-                <p className="text-xs text-muted-foreground">Before switching, the system will send GET requests to all these URLs simultaneously. All requests must succeed to proceed.</p>
+                <p className="text-xs text-muted-foreground">{t('settings.target_urls_desc', 'Before switching, the system will send GET requests to all these URLs simultaneously. All requests must succeed to proceed.')}</p>
               </div>
             </div>
           )}
@@ -323,15 +325,15 @@ export function Settings() {
         <div className="space-y-4 p-6 rounded-xl border border-border bg-card">
           <div className="flex items-center justify-between">
             <div>
-              <h2 className="text-lg font-medium">System Integration</h2>
-              <p className="text-sm text-muted-foreground mt-1">Configure how Node Rover integrates with your operating system.</p>
+              <h2 className="text-lg font-medium">{t('settings.system_integration', 'System Integration')}</h2>
+              <p className="text-sm text-muted-foreground mt-1">{t('settings.sys_int_desc', 'Configure how Node Rover integrates with your operating system.')}</p>
             </div>
           </div>
           <div className="space-y-4 pt-2 border-t border-border/50">
             <div className="flex items-center justify-between">
               <div>
-                <label className="text-sm font-medium text-foreground">Auto-Start on Boot (Silent Boot)</label>
-                <p className="text-xs text-muted-foreground mt-0.5">Start Node Rover automatically when you log in. It will start silently in the system tray.</p>
+                <label className="text-sm font-medium text-foreground">{t('settings.autostart', 'Auto-Start on Boot (Silent Boot)')}</label>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('settings.autostart_desc', 'Start Node Rover automatically when you log in. It will start silently in the system tray.')}</p>
               </div>
               <label className="flex items-center gap-2 cursor-pointer relative">
                 {autostartLoading && <span className="absolute -left-6 text-muted-foreground animate-spin">◷</span>}
@@ -343,6 +345,32 @@ export function Settings() {
                   className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer disabled:opacity-50"
                 />
               </label>
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-border/50">
+              <div>
+                <label className="text-sm font-medium text-foreground">{t('settings.language', 'Language')}</label>
+                <p className="text-xs text-muted-foreground mt-0.5">{t('settings.language_desc', 'Select the application language.')}</p>
+              </div>
+              <select
+                value={config.language || "auto"}
+                onChange={(e) => {
+                  const newLang = e.target.value;
+                  setConfig({ ...config, language: newLang });
+                  if (newLang !== "auto") {
+                    i18n.changeLanguage(newLang);
+                  } else {
+                    // Assuming we let browser-detector fallback, but simple reload or just not calling change is fine.
+                    // Better to just call it with detected language if we can, but setting auto will let the backend handle tray, and here we can refresh or let it be.
+                  }
+                }}
+                className="bg-background border border-border rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/20 cursor-pointer"
+              >
+                <option value="auto">{t('settings.lang_auto', 'Auto-Detect')}</option>
+                <option value="en">English</option>
+                <option value="zh-TW">繁體中文</option>
+                <option value="zh-CN">简体中文</option>
+              </select>
             </div>
           </div>
         </div>

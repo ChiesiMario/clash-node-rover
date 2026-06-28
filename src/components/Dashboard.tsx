@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { invoke } from "@tauri-apps/api/core";
 import { CheckCircle2, XCircle, Clock, Play, Loader2, Pause, PauseCircle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { NodeRanking } from "./NodeRanking";
 
 export interface AppStatus {
@@ -26,6 +27,7 @@ interface DashboardProps {
 }
 
 export function Dashboard({ status, onNavigate }: DashboardProps) {
+  const { t } = useTranslation();
   const [apiUrl, setApiUrl] = useState<string>("");
   const [targetGroups, setTargetGroups] = useState<string[] | null>(null);
 
@@ -57,7 +59,7 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
       <div className="p-8 max-w-4xl mx-auto space-y-8 flex items-center justify-center min-h-[50vh]">
         <div className="flex flex-col items-center gap-4 text-muted-foreground">
           <Loader2 className="w-8 h-8 animate-spin" />
-          <p>Connecting to background engine...</p>
+          <p>{t('dashboard.connecting', 'Connecting to background engine...')}</p>
         </div>
       </div>
     );
@@ -72,14 +74,14 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
           <>
             <div className="flex items-start justify-between">
         <div className="space-y-2">
-          <h1 className="text-3xl font-semibold tracking-tight">System Status</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">{t('dashboard.system_status', 'System Status')}</h1>
           <div className="flex flex-col gap-2">
-            <p className="text-muted-foreground">Monitor your proxy nodes in real-time.</p>
+            <p className="text-muted-foreground">{t('dashboard.subtitle', 'Monitor your proxy nodes in real-time.')}</p>
             {status.api_connected && apiUrl && (
               <div className="flex items-center">
                 <span className="px-2 py-0.5 rounded-md text-xs font-mono bg-muted/50 text-muted-foreground border border-border flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)] animate-pulse"></span>
-                  Connected to {apiUrl.replace(/^https?:\/\//, '')}
+                  {t('dashboard.connected_to', 'Connected to')} {apiUrl.replace(/^https?:\/\//, '')}
                 </span>
               </div>
             )}
@@ -99,12 +101,12 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
           {status.is_paused ? (
             <>
               <Play className="w-4 h-4 fill-current" />
-              Resume Engine
+              {t('dashboard.resume_engine', 'Resume Engine')}
             </>
           ) : (
             <>
               <Pause className="w-4 h-4 fill-current" />
-              Pause Engine
+              {t('dashboard.pause_engine', 'Pause Engine')}
             </>
           )}
         </button>
@@ -114,7 +116,7 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
         {/* Status Card 1: Connection */}
         <div className="p-6 rounded-xl border border-border bg-muted/30 space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-sm text-muted-foreground">API Connection</h3>
+            <h3 className="font-medium text-sm text-muted-foreground">{t('dashboard.api_connection', 'API Connection')}</h3>
             {status.api_connected ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-500" />
             ) : (
@@ -122,26 +124,26 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
             )}
           </div>
           <div className="text-2xl font-semibold">
-            {status.api_connected ? "Connected" : "Disconnected"}
+            {status.api_connected ? t('dashboard.connected', 'Connected') : t('dashboard.disconnected', 'Disconnected')}
           </div>
         </div>
 
         {/* Status Card 2: Engine State */}
         <div className="p-6 rounded-xl border border-border bg-muted/30 space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-sm text-muted-foreground">Engine State</h3>
+            <h3 className="font-medium text-sm text-muted-foreground">{t('dashboard.engine_state', 'Engine State')}</h3>
 
             <ActivityIcon isTesting={status.is_testing} isPaused={status.is_paused} isEmpty={isTargetEmpty} />
           </div>
           <div className="text-2xl font-semibold">
-            {isTargetEmpty ? <span className="text-muted-foreground">No Groups Set</span> : status.is_paused ? "Paused" : status.is_testing ? "Testing Nodes..." : "Standby"}
+            {isTargetEmpty ? <span className="text-muted-foreground">{t('dashboard.state.no_groups', 'No Groups Set')}</span> : status.is_paused ? t('dashboard.state.paused', 'Paused') : status.is_testing ? t('dashboard.state.testing', 'Testing Nodes...') : t('dashboard.state.standby', 'Standby')}
           </div>
         </div>
 
         {/* Status Card 3: Next Check */}
         <div className="p-6 rounded-xl border border-border bg-muted/30 space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
-            <h3 className="font-medium text-sm text-muted-foreground">Next Check</h3>
+            <h3 className="font-medium text-sm text-muted-foreground">{t('dashboard.next_check', 'Next Check')}</h3>
             <Clock className="w-5 h-5 text-blue-500" />
           </div>
           <div className="flex items-center justify-between">
@@ -157,12 +159,12 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
                 {status.is_testing ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    Testing...
+                    {t('dashboard.testing', 'Testing...')}
                   </>
                 ) : (
                   <>
                     <Play className="w-3.5 h-3.5" />
-                    Test Now
+                    {t('dashboard.test_now', 'Test Now')}
                   </>
                 )}
               </button>

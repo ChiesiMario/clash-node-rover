@@ -431,7 +431,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/50 text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium w-12 text-center">{t('ranking.status', 'Status')}</th>
+                  <th className="px-4 py-3 font-medium w-24 whitespace-nowrap text-center">{t('ranking.status', 'Status')}</th>
                   <th className="px-4 py-3 font-medium">{t('ranking.node_name', 'Node Name')}</th>
                   <th className="px-4 py-3 font-medium w-32">{t('ranking.score', 'Score')}</th>
                   <th className="px-4 py-3 font-medium w-32">{t('ranking.mean_jitter', 'Mean/Jitter')}</th>

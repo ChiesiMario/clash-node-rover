@@ -97,6 +97,40 @@ async fn perform_http_test(node_name: &str, config: &crate::config::Config, clas
     all_success
 }
 
+async fn check_local_network(db: &Db) -> bool {
+    let dns_servers = [
+        "223.5.5.5:53",      // Ali DNS
+        "119.29.29.29:53",   // Tencent DNS
+        "8.8.8.8:53",        // Google DNS
+        "1.1.1.1:53",        // Cloudflare DNS
+    ];
+    
+    let mut futures_list = Vec::new();
+    for server in dns_servers.iter() {
+        let server = server.to_string();
+        futures_list.push(tauri::async_runtime::spawn(async move {
+            match tokio::time::timeout(std::time::Duration::from_millis(2000), tokio::net::TcpStream::connect(&server)).await {
+                Ok(Ok(_)) => Ok(server),
+                _ => Err(()),
+            }
+        }));
+    }
+    
+    // We want to return true as soon as ANY of them succeeds.
+    // However, select_ok requires streams or similar. Let's just collect the join handles and wait for the first successful result.
+    let mut tasks: futures::stream::FuturesUnordered<_> = futures_list.into_iter().collect();
+    
+    while let Some(res) = tasks.next().await {
+        if let Ok(Ok(success_server)) = res {
+            db.insert_log("DEBUG", &format!("本機網路檢查通過 (成功連接: {})", success_server));
+            return true;
+        }
+    }
+    
+    db.insert_log("WARN", "本機網路檢查失敗: 所有 DNS 伺服器均無法連線，可能本機網路已中斷。");
+    false
+}
+
 pub fn start_watchdog(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let mut has_logged_empty_groups = false;
@@ -171,7 +205,31 @@ pub fn start_watchdog(app: AppHandle) {
                 has_logged_empty_groups = false;
             }
 
-            // 2. 開始測速演算法
+            // 2. 本機網路檢測 (Local Network Check)
+            if !check_local_network(&db).await {
+                db.insert_log("WARN", "跳過本次測速以保護原有節點延遲狀態。");
+                // Emit status with next_check_in to show countdown but testing = false
+                status.is_testing = false;
+                let mut remaining = config.check_interval;
+                while remaining > 0 {
+                    status.next_check_in = remaining;
+                    let _ = app.emit("status_update", &status);
+                    if let Ok(mut current_status) = app.state::<AppState>().status.lock() {
+                        *current_status = status.clone();
+                    }
+                    tokio::select! {
+                        _ = force_test.notified() => {
+                            break;
+                        }
+                        _ = sleep(Duration::from_secs(1)) => {
+                            remaining -= 1;
+                        }
+                    }
+                }
+                continue;
+            }
+
+            // 3. 開始測速演算法
             db.insert_log("INFO", "==================================================");
             db.insert_log("INFO", "[測速任務開始]");
             let current_tolerance = config.tolerance;

@@ -154,7 +154,7 @@ pub fn run() {
             }
 
             app.manage(AppState {
-                config: Mutex::new(cfg),
+                config: Mutex::new(cfg.clone()),
                 force_test: Arc::new(Notify::new()),
                 last_results: Mutex::new(Vec::new()),
                 status: Mutex::new(watchdog::AppStatus {

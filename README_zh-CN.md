@@ -3,7 +3,7 @@
 # Clash Node Rover
 
 <p align="center">
-  <img src="Image/1.png" alt="Clash Node Rover Dashboard" width="100%" />
+  <img src="image/1.png" alt="Clash Node Rover Dashboard" width="100%" />
 </p>
 
 **Clash Node Rover** 是一个基于 Rust 与 Tauri 构建的高性能后台引擎与图形化管理工具，专门用来监控并自动将您的 Clash / Clash Meta 代理切换到当下最快、最稳定的节点。
@@ -25,17 +25,17 @@
 ### 仪表板 (Dashboard)
 实时监控系统状态、API 连线状态、活跃群组与目前的测速进度。
 
-<img src="Image/1.png" alt="Dashboard" width="100%" />
+<img src="image/1.png" alt="Dashboard" width="100%" />
 
 ### 节点排行与历史图表 (Node Ranking & History)
 将所有节点依照分数排序，支持地区过滤，点击节点即可展开查看 24H / 3天 / 7天的历史延迟折线图。
 
-<img src="Image/2.png" alt="Node Ranking" width="100%" />
+<img src="image/2.png" alt="Node Ranking" width="100%" />
 
 ### 高级设置 (Settings)
 高度自定义的容忍度 (Tolerance)、退避机制 (Backoff Rounds) 与并发数量设定，满足各种网络环境的需求。
 
-<img src="Image/3.png" alt="Settings" width="100%" />
+<img src="image/3.png" alt="Settings" width="100%" />
 
 ---
 

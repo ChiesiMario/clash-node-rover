@@ -3,7 +3,7 @@
 # Clash Node Rover
 
 <p align="center">
-  <img src="Image/1.png" alt="Clash Node Rover Dashboard" width="100%" />
+  <img src="image/1.png" alt="Clash Node Rover Dashboard" width="100%" />
 </p>
 
 **Clash Node Rover** is a high-performance background engine and graphical management tool built with Rust and Tauri, specifically designed to monitor and automatically switch your Clash / Clash Meta proxies to the fastest and most stable node available.
@@ -25,17 +25,17 @@
 ### Dashboard
 Monitor system status, API connectivity, active groups, and current speed test progress in real time.
 
-<img src="Image/1.png" alt="Dashboard" width="100%" />
+<img src="image/1.png" alt="Dashboard" width="100%" />
 
 ### Node Ranking & History
 Sorts all nodes by score, supports region filtering, and allows clicking on a node to expand its 24H / 3-Day / 7-Day historical latency line chart.
 
-<img src="Image/2.png" alt="Node Ranking" width="100%" />
+<img src="image/2.png" alt="Node Ranking" width="100%" />
 
 ### Advanced Settings
 Highly customizable settings for Tolerance, Backoff Rounds, and maximum concurrency to suit various network environments.
 
-<img src="Image/3.png" alt="Settings" width="100%" />
+<img src="image/3.png" alt="Settings" width="100%" />
 
 ---
 

@@ -65,6 +65,11 @@ fn get_logs(state: tauri::State<db::Db>) -> Vec<db::LogEntry> {
 }
 
 #[tauri::command]
+fn get_node_history(state: tauri::State<db::Db>, node_name: String, hours: u32) -> Vec<db::NodeHistoryEntry> {
+    state.get_node_history(&node_name, hours)
+}
+
+#[tauri::command]
 fn get_status(state: tauri::State<AppState>) -> watchdog::AppStatus {
     state.status.lock().unwrap().clone()
 }
@@ -276,7 +281,8 @@ pub fn run() {
             manual_switch,
             get_latest_results,
             get_status,
-            toggle_pause
+            toggle_pause,
+            get_node_history
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

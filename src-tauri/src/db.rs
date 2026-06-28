@@ -10,6 +10,15 @@ pub struct LogEntry {
     pub message: String,
 }
 
+#[derive(serde::Serialize, Clone)]
+pub struct NodeHistoryEntry {
+    pub timestamp: String,
+    pub node_name: String,
+    pub delay: Option<i32>,
+    pub mean: Option<i32>,
+    pub jitter: Option<i32>,
+}
+
 pub struct Db {
     pub conn: Mutex<Connection>,
     pub app_handle: AppHandle,
@@ -42,6 +51,18 @@ impl Db {
                 node_name TEXT NOT NULL,
                 ping_ms INTEGER NOT NULL,
                 status TEXT NOT NULL
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS node_history_v2 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                node_name TEXT NOT NULL,
+                delay INTEGER,
+                mean INTEGER,
+                jitter INTEGER
             )",
             [],
         )?;
@@ -92,5 +113,47 @@ impl Db {
             }
         }
         logs
+    }
+
+    pub fn insert_node_history(&self, node_name: &str, delay: Option<i32>, mean: Option<i32>, jitter: Option<i32>) {
+        if let Ok(conn) = self.conn.lock() {
+            let _ = conn.execute(
+                "INSERT INTO node_history_v2 (node_name, delay, mean, jitter) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![node_name, delay, mean, jitter],
+            );
+            
+            // Auto cleanup: delete records older than 7 days
+            let _ = conn.execute(
+                "DELETE FROM node_history_v2 WHERE timestamp < datetime('now', '-7 days')",
+                [],
+            );
+        }
+    }
+
+    pub fn get_node_history(&self, node_name: &str, hours: u32) -> Vec<NodeHistoryEntry> {
+        let mut history = Vec::new();
+        if let Ok(conn) = self.conn.lock() {
+            let query = format!(
+                "SELECT datetime(timestamp, 'localtime'), node_name, delay, mean, jitter 
+                 FROM node_history_v2 
+                 WHERE node_name = ?1 AND timestamp >= datetime('now', '-{} hours') 
+                 ORDER BY id ASC",
+                hours
+            );
+            if let Ok(mut stmt) = conn.prepare(&query) {
+                if let Ok(mut rows) = stmt.query(rusqlite::params![node_name]) {
+                    while let Some(row) = rows.next().unwrap_or(None) {
+                        history.push(NodeHistoryEntry {
+                            timestamp: row.get(0).unwrap_or_default(),
+                            node_name: row.get(1).unwrap_or_default(),
+                            delay: row.get(2).unwrap_or(None),
+                            mean: row.get(3).unwrap_or(None),
+                            jitter: row.get(4).unwrap_or(None),
+                        });
+                    }
+                }
+            }
+        }
+        history
     }
 }

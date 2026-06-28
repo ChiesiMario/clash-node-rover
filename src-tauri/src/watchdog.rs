@@ -440,6 +440,22 @@ pub fn start_watchdog(app: AppHandle) {
                 ping_results.insert(node, res);
             }
 
+            // 將所有測試結果寫入資料庫歷史紀錄
+            for (node, res) in &ping_results {
+                match res {
+                    Ok((score, mean, jitter)) => {
+                        db.insert_node_history(node, Some(*score as i32), Some(*mean as i32), Some(*jitter as i32));
+                    },
+                    Err(_) => {
+                        db.insert_node_history(node, None, None, None);
+                    }
+                }
+            }
+            // 退避中的節點視為 Timeout
+            for (node, _) in &backed_off_nodes {
+                db.insert_node_history(node, None, None, None);
+            }
+
             let mut http_test_cache: HashMap<String, bool> = HashMap::new();
 
             // 階段三：分配測速結果至各群組進行決策

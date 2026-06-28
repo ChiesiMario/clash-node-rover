@@ -1,8 +1,9 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, Fragment } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Zap, WifiOff, Loader2, ChevronDown } from "lucide-react";
+import { Zap, WifiOff, Loader2, ChevronDown, LineChart as LineChartIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { NodeHistoryChart } from "./NodeHistoryChart";
 
 interface NodeResult {
   name: string;
@@ -139,6 +140,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
   const { t } = useTranslation();
   const [groups, setGroups] = useState<GroupResult[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<Record<string, string>>({});
+  const [expandedNode, setExpandedNode] = useState<string | null>(null);
 
   useEffect(() => {
     // Fetch initial state
@@ -440,10 +442,11 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
               </thead>
               <tbody className="divide-y divide-border/50">
                 {unifiedNodes.map((node) => (
-                  <tr 
-                    key={node.name} 
-                    className={`transition-colors hover:bg-muted/30 ${node.activeInGroups.length > 0 ? "bg-primary/5" : ""}`}
-                  >
+                  <Fragment key={node.name}>
+                    <tr 
+                      className={`transition-colors cursor-pointer hover:bg-muted/30 ${node.activeInGroups.length > 0 ? "bg-primary/5" : ""} ${expandedNode === node.name ? "bg-muted/50" : ""}`}
+                      onClick={() => setExpandedNode(expandedNode === node.name ? null : node.name)}
+                    >
                     <td className="px-4 py-3 text-center">
                       <div className="flex justify-center items-center h-full">
                         {isTesting ? (
@@ -457,7 +460,10 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                     </td>
                     <td className={`px-4 py-3 min-w-[200px] max-w-[400px] font-medium ${node.activeInGroups.length > 0 ? "text-primary" : "text-foreground"}`}>
                       <div className="flex flex-col gap-1.5">
-                        <span className="truncate">{node.name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="truncate">{node.name}</span>
+                          <LineChartIcon className="w-3.5 h-3.5 text-muted-foreground/50 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </div>
                         {(node.provider || (node.backoff_rounds && node.backoff_rounds > 0)) && (
                           <div className="flex items-center gap-1.5">
                             {node.provider && (
@@ -524,7 +530,17 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                         <span className="text-muted-foreground/50 text-xs">-</span>
                       )}
                     </td>
-                  </tr>
+                    </tr>
+                    {expandedNode === node.name && (
+                      <tr>
+                        <td colSpan={5} className="p-0 border-b border-border/50">
+                          <div className="animate-in slide-in-from-top-2 duration-200">
+                            <NodeHistoryChart nodeName={node.name} />
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

@@ -73,7 +73,17 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
             <div className="flex items-start justify-between">
         <div className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight">System Status</h1>
-          <p className="text-muted-foreground">Monitor your proxy nodes in real-time.</p>
+          <div className="flex flex-col gap-2">
+            <p className="text-muted-foreground">Monitor your proxy nodes in real-time.</p>
+            {status.api_connected && apiUrl && (
+              <div className="flex items-center">
+                <span className="px-2 py-0.5 rounded-md text-xs font-mono bg-muted/50 text-muted-foreground border border-border flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_4px_rgba(16,185,129,0.5)] animate-pulse"></span>
+                  Connected to {apiUrl.replace(/^https?:\/\//, '')}
+                </span>
+              </div>
+            )}
+          </div>
         </div>
         <button
           onClick={() => invoke("toggle_pause")}
@@ -102,7 +112,7 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Status Card 1: Connection */}
-        <div className="p-6 rounded-xl border border-border bg-muted/30 shadow-sm space-y-4 transition-colors hover:bg-muted/50">
+        <div className="p-6 rounded-xl border border-border bg-muted/30 space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">API Connection</h3>
             {status.api_connected ? (
@@ -111,20 +121,13 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
               <XCircle className="w-5 h-5 text-rose-500" />
             )}
           </div>
-          <div className="flex flex-col">
-            <div className="text-2xl font-semibold">
-              {status.api_connected ? "Connected" : "Disconnected"}
-            </div>
-            {status.api_connected && apiUrl && (
-              <span className="text-sm font-medium text-muted-foreground/70 mt-0.5 tracking-tight font-mono">
-                {apiUrl}
-              </span>
-            )}
+          <div className="text-2xl font-semibold">
+            {status.api_connected ? "Connected" : "Disconnected"}
           </div>
         </div>
 
         {/* Status Card 2: Engine State */}
-        <div className="p-6 rounded-xl border border-border bg-muted/30 shadow-sm space-y-4 transition-colors hover:bg-muted/50">
+        <div className="p-6 rounded-xl border border-border bg-muted/30 space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">Engine State</h3>
 
@@ -136,7 +139,7 @@ export function Dashboard({ status, onNavigate }: DashboardProps) {
         </div>
 
         {/* Status Card 3: Next Check */}
-        <div className="p-6 rounded-xl border border-border bg-muted/30 shadow-sm space-y-4 transition-colors hover:bg-muted/50">
+        <div className="p-6 rounded-xl border border-border bg-muted/30 space-y-4 transition-colors hover:bg-muted/50">
           <div className="flex items-center justify-between">
             <h3 className="font-medium text-sm text-muted-foreground">Next Check</h3>
             <Clock className="w-5 h-5 text-blue-500" />

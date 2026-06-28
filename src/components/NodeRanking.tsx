@@ -423,7 +423,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
           <span className="text-sm text-muted-foreground">{unifiedNodes.length} nodes</span>
         </div>
         
-        <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/50 text-muted-foreground">

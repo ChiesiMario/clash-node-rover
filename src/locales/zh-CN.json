@@ -7,13 +7,21 @@
   },
   "dashboard": {
     "system_status": "系统状态",
-    "monitor_realtime": "实时监控您的代理节点。",
+    "subtitle": "实时监控您的代理节点。",
+    "connecting": "正在连接至后台引擎...",
+    "connected_to": "已连接至",
+    "resume_engine": "恢复引擎",
+    "pause_engine": "暂停引擎",
     "api_connection": "API 连接",
     "connected": "已连接",
     "disconnected": "已断开",
     "engine_state": "引擎状态",
-    "paused": "已暂停",
-    "running": "运行中",
+    "state": {
+      "no_groups": "尚未设置群组",
+      "paused": "已暂停",
+      "testing": "正在测速...",
+      "standby": "待机中"
+    },
     "active_tests": "{{count}} 个活跃测试",
     "idle": "闲置",
     "next_check": "下次检查",
@@ -24,8 +32,16 @@
     "score": "分数",
     "mean_jitter": "平均 / 抖动",
     "active_in_groups": "活跃于群组",
+    "test_now": "立即测速",
     "testing": "测试中...",
     "timeout": "超时"
+  },
+  "console": {
+    "title": "系统日志",
+    "subtitle": "来自后台引擎的详细执行记录。",
+    "hide_debug": "隐藏调试日志",
+    "show_debug": "显示调试日志",
+    "no_logs": "目前尚未有日志记录。"
   },
   "ranking": {
     "select_node": "选择节点...",

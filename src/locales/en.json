@@ -7,13 +7,21 @@
   },
   "dashboard": {
     "system_status": "System Status",
-    "monitor_realtime": "Monitor your proxy nodes in real-time.",
+    "subtitle": "Monitor your proxy nodes in real-time.",
+    "connecting": "Connecting to background engine...",
+    "connected_to": "Connected to",
+    "resume_engine": "Resume Engine",
+    "pause_engine": "Pause Engine",
     "api_connection": "API Connection",
     "connected": "Connected",
     "disconnected": "Disconnected",
     "engine_state": "Engine State",
-    "paused": "Paused",
-    "running": "Running",
+    "state": {
+      "no_groups": "No Groups Set",
+      "paused": "Paused",
+      "testing": "Testing Nodes...",
+      "standby": "Standby"
+    },
     "active_tests": "{{count}} active tests",
     "idle": "Idle",
     "next_check": "Next Check",
@@ -24,8 +32,16 @@
     "score": "Score",
     "mean_jitter": "Mean/Jitter",
     "active_in_groups": "Active In Groups",
+    "test_now": "Test Now",
     "testing": "Testing...",
     "timeout": "Timeout"
+  },
+  "console": {
+    "title": "System Logs",
+    "subtitle": "Detailed execution traces from the background engine.",
+    "hide_debug": "Hide Debug Logs",
+    "show_debug": "Show Debug Logs",
+    "no_logs": "No logs available yet."
   },
   "ranking": {
     "select_node": "Select node...",

@@ -171,29 +171,29 @@ pub fn run() {
             // 建立系統列選單與圖示
             let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
             
-            let show_text = match cfg.language.as_deref() {
-                Some("zh-TW") => "顯示儀表板",
-                Some("zh-CN") => "显示仪表板",
+            let show_text = match cfg.language.as_str() {
+                "zh-TW" => "顯示儀表板",
+                "zh-CN" => "显示仪表板",
                 _ => "Show Dashboard",
             };
-            let force_test_text = match cfg.language.as_deref() {
-                Some("zh-TW") => "強制測速",
-                Some("zh-CN") => "强制测速",
+            let force_test_text = match cfg.language.as_str() {
+                "zh-TW" => "強制測速",
+                "zh-CN" => "强制测速",
                 _ => "Force Test",
             };
-            let toggle_pause_text = match cfg.language.as_deref() {
-                Some("zh-TW") => "暫停 / 恢復",
-                Some("zh-CN") => "暂停 / 恢复",
+            let toggle_pause_text = match cfg.language.as_str() {
+                "zh-TW" => "暫停 / 恢復",
+                "zh-CN" => "暂停 / 恢复",
                 _ => "Pause / Resume",
             };
-            let autostart_text = match cfg.language.as_deref() {
-                Some("zh-TW") => "開機自動啟動",
-                Some("zh-CN") => "开机自动启动",
+            let autostart_text = match cfg.language.as_str() {
+                "zh-TW" => "開機自動啟動",
+                "zh-CN" => "开机自动启动",
                 _ => "Auto-start on Boot",
             };
-            let quit_text = match cfg.language.as_deref() {
-                Some("zh-TW") => "退出",
-                Some("zh-CN") => "退出",
+            let quit_text = match cfg.language.as_str() {
+                "zh-TW" => "退出",
+                "zh-CN" => "退出",
                 _ => "Quit",
             };
 

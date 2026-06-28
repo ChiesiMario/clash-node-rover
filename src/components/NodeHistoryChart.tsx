@@ -45,10 +45,15 @@ export function NodeHistoryChart({ nodeName }: NodeHistoryChartProps) {
           
           const date = new Date(entry.timestamp);
           
+          const isMultiDay = hours > 24;
+          const timeStr = isMultiDay
+            ? `${String(date.getMonth() + 1).padStart(2, '0')}/${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+            : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
           // Recharts handles null values by breaking the line, which is what we want for Timeouts
           return {
-            time: date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            fullDate: date.toLocaleString(),
+            time: timeStr,
+            fullDate: date.toLocaleString([], { hour12: false }),
             score: entry.delay,
             mean: entry.mean,
             jitter: entry.jitter,

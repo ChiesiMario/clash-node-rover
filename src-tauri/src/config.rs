@@ -31,7 +31,7 @@ impl Default for Config {
             api_url: "http://127.0.0.1:9090".to_string(),
             api_secret: "".to_string(),
             check_interval: 60,
-            target_groups: vec!["PROXIES".to_string()],
+            target_groups: vec![],
             dedicated_test_group: "".into(),
             test_urls: vec![
                 "http://www.gstatic.com/generate_204".into(),

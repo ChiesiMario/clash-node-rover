@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import { Zap, WifiOff, Star, Lock, Unlock, Check, Loader2, ChevronDown } from "lucide-react";
+import { Zap, WifiOff, Loader2, ChevronDown } from "lucide-react";
 
 interface NodeResult {
   name: string;
@@ -23,6 +23,8 @@ const AVAILABLE_REGIONS = ["US", "JP", "HK", "SG", "TW", "KR", "UK"];
 
 interface NodeRankingProps {
   isTesting?: boolean;
+  targetGroups?: string[] | null;
+  onNavigate?: (tab: string) => void;
 }
 
 function CustomNodeSelect({ 
@@ -113,7 +115,7 @@ function CustomNodeSelect({
   );
 }
 
-export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
+export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRankingProps = {}) {
   const [groups, setGroups] = useState<GroupResult[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<Record<string, string>>({});
 
@@ -187,9 +189,51 @@ export function NodeRanking({ isTesting }: NodeRankingProps = {}) {
     }
   };
 
+  const isTargetEmpty = targetGroups !== null && targetGroups?.length === 0;
+
+  if (isTargetEmpty) {
+    return (
+      <div className="space-y-8 animate-in fade-in duration-300">
+        <div className="space-y-3">
+          <h2 className="text-xl font-semibold tracking-tight">Monitored Groups</h2>
+          <div className="p-8 rounded-xl border border-dashed border-border bg-card/30 flex flex-col items-center justify-center gap-4">
+            <div className="text-muted-foreground text-center">
+              <p className="font-medium text-foreground mb-1">No groups configured</p>
+              <p className="text-sm">You haven't added any Clash proxy groups to monitor yet.</p>
+            </div>
+            <button 
+              onClick={() => onNavigate?.("settings")}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium text-sm transition-opacity hover:opacity-90 shadow-sm"
+            >
+              Go to Settings
+            </button>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold tracking-tight">Node Ranking</h2>
+            <span className="text-sm text-muted-foreground">0 nodes</span>
+          </div>
+          <div className="p-8 rounded-xl border border-dashed border-border bg-card/30 flex flex-col items-center justify-center gap-4">
+            <div className="text-muted-foreground text-center text-sm">
+              <p>Add some groups in Settings to discover and rank your nodes here.</p>
+            </div>
+            <button 
+              onClick={() => onNavigate?.("settings")}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded-md font-medium text-sm transition-opacity hover:opacity-90 shadow-sm"
+            >
+              Go to Settings
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (groups.length === 0) {
     return (
-      <div className="p-8 rounded-xl border border-border bg-card/50 text-center text-muted-foreground">
+      <div className="p-8 rounded-xl border border-border bg-card/50 text-center text-muted-foreground animate-pulse">
         Waiting for next speed test cycle...
       </div>
     );

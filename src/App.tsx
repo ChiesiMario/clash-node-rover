@@ -11,6 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 
 function App() {
   const [status, setStatus] = useState<AppStatus | null>(null);
+  const [activeTab, setActiveTab] = useState("dashboard");
 
   useEffect(() => {
     invoke<AppStatus>("get_status").then((initialStatus) => {
@@ -27,7 +28,7 @@ function App() {
   }, []);
   return (
     <div className="flex flex-col h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground">
-      <Tabs.Root defaultValue="dashboard" className="flex flex-col h-full">
+      <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
         <Tabs.List className="flex border-b border-border bg-muted/30 px-4 py-2 gap-1">
           <Tabs.Trigger
             value="dashboard"
@@ -58,7 +59,7 @@ function App() {
             className="h-full focus:outline-none data-[state=inactive]:hidden animate-in fade-in duration-1000" 
             forceMount
           >
-            <Dashboard status={status} />
+            <Dashboard status={status} onNavigate={setActiveTab} />
           </Tabs.Content>
           <Tabs.Content 
             value="settings" 

@@ -27,7 +27,11 @@ fn get_config(state: tauri::State<AppState>) -> Config {
 #[tauri::command]
 fn save_config(app: AppHandle, state: tauri::State<AppState>, new_config: Config) -> Result<(), String> {
     *state.config.lock().unwrap() = new_config.clone();
-    config::save_config(&app, &new_config)
+    let res = config::save_config(&app, &new_config);
+    if res.is_ok() {
+        let _ = app.emit("config_updated", ());
+    }
+    res
 }
 
 #[tauri::command]

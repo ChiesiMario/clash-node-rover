@@ -3,7 +3,8 @@
     "dashboard": "Dashboard",
     "node_ranking": "Node Ranking",
     "settings": "Settings",
-    "console": "Console"
+    "console": "Console",
+    "about": "About"
   },
   "dashboard": {
     "system_status": "System Status",
@@ -136,5 +137,12 @@
     "all_set": "You're All Set!",
     "all_set_desc": "Clash Node Rover is now ready to optimize your network experience. You can always tweak advanced rules, latency tolerance, and HTTP verification in the Settings tab.",
     "enter_dashboard": "Enter Dashboard"
+  },
+  "about": {
+    "title": "About Clash Node Rover",
+    "description": "Lightweight and smart node management and testing tool",
+    "version": "Version",
+    "author": "Author",
+    "github": "GitHub Repository"
   }
 }

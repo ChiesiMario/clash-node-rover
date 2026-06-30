@@ -1,10 +1,11 @@
 
 import * as Tabs from "@radix-ui/react-tabs";
-import { Activity, Settings2, TerminalSquare } from "lucide-react";
+import { Activity, Settings2, TerminalSquare, Info } from "lucide-react";
 import { Dashboard, AppStatus } from "./components/Dashboard";
 import { Settings } from "./components/Settings";
 import { Console } from "./components/Console";
 import { SetupWizard } from "./components/SetupWizard";
+import { About } from "./components/About";
 import "./App.css";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -85,6 +86,13 @@ function App() {
             <TerminalSquare className="w-4 h-4" />
             <span className="font-medium text-sm">{t('nav.console', 'Console')}</span>
           </Tabs.Trigger>
+          <Tabs.Trigger
+            value="about"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+          >
+            <Info className="w-4 h-4" />
+            <span className="font-medium text-sm">{t('nav.about', 'About')}</span>
+          </Tabs.Trigger>
         </Tabs.List>
 
         <div className="flex-1 overflow-auto">
@@ -108,6 +116,13 @@ function App() {
             forceMount
           >
             <Console />
+          </Tabs.Content>
+          <Tabs.Content 
+            value="about" 
+            className="h-full focus:outline-none data-[state=inactive]:hidden animate-in fade-in duration-1000" 
+            forceMount
+          >
+            <About />
           </Tabs.Content>
         </div>
       </Tabs.Root>

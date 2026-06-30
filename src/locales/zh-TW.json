@@ -3,7 +3,8 @@
     "dashboard": "儀表板",
     "node_ranking": "節點排行",
     "settings": "設定",
-    "console": "終端機"
+    "console": "終端機",
+    "about": "關於"
   },
   "dashboard": {
     "system_status": "系統狀態",
@@ -136,5 +137,12 @@
     "all_set": "一切就緒！",
     "all_set_desc": "Clash Node Rover 現在已準備好優化您的網路體驗。您隨時可以在「設定」分頁調整進階規則、延遲容忍度和 HTTP 驗證。",
     "enter_dashboard": "進入儀表板"
+  },
+  "about": {
+    "title": "關於 Clash Node Rover",
+    "description": "輕量級且智能的節點管理與測試工具",
+    "version": "版本",
+    "author": "作者",
+    "github": "GitHub 專案"
   }
 }

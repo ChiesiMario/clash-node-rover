@@ -32,8 +32,41 @@ fn save_config(app: AppHandle, state: tauri::State<AppState>, new_config: Config
     let res = config::save_config(&app, &new_config);
     if res.is_ok() {
         let _ = app.emit("config_updated", ());
+        let _ = update_tray_menu(&app, &new_config.language);
     }
     res
+}
+
+fn update_tray_menu(app: &AppHandle, language: &str) -> tauri::Result<()> {
+    let resolved_lang = if language == "auto" {
+        sys_locale::get_locale().unwrap_or_else(|| "en".to_string())
+    } else {
+        language.to_string()
+    };
+    
+    let is_zh = resolved_lang.starts_with("zh");
+    let is_tw = resolved_lang.contains("TW") || resolved_lang.contains("Hant") || resolved_lang.contains("HK");
+    
+    let show_text = if is_tw { "顯示儀表板" } else if is_zh { "显示仪表板" } else { "Show Dashboard" };
+    let force_test_text = if is_tw { "強制測速" } else if is_zh { "强制测速" } else { "Force Test" };
+    let toggle_pause_text = if is_tw { "暫停 / 恢復" } else if is_zh { "暂停 / 恢复" } else { "Pause / Resume" };
+    let autostart_text = if is_tw { "開機自動啟動" } else if is_zh { "开机自动启动" } else { "Auto-start on Boot" };
+    let quit_text = if is_tw { "退出" } else if is_zh { "退出" } else { "Quit" };
+
+    if let Some(tray) = app.tray_by_id("main") {
+        let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
+        let show_i = MenuItem::with_id(app, "show", show_text, true, None::<&str>)?;
+        let force_test_i = MenuItem::with_id(app, "force_test", force_test_text, true, None::<&str>)?;
+        let toggle_pause_i = MenuItem::with_id(app, "toggle_pause", toggle_pause_text, true, None::<&str>)?;
+        let autostart_i = CheckMenuItem::with_id(app, "toggle_autostart", autostart_text, true, is_autostart_enabled, None::<&str>)?;
+        let separator = PredefinedMenuItem::separator(app)?;
+        let quit_i = MenuItem::with_id(app, "quit", quit_text, true, None::<&str>)?;
+        let menu = Menu::with_items(app, &[&show_i, &force_test_i, &toggle_pause_i, &separator, &autostart_i, &separator, &quit_i])?;
+        
+        let _ = tray.set_menu(Some(menu));
+    }
+    
+    Ok(())
 }
 
 #[tauri::command]
@@ -185,46 +218,9 @@ pub fn run() {
             watchdog::start_watchdog(app.handle().clone());
             
             // 建立系統列選單與圖示
-            let is_autostart_enabled = app.autolaunch().is_enabled().unwrap_or(false);
-            
-            let show_text = match cfg.language.as_str() {
-                "zh-TW" => "顯示儀表板",
-                "zh-CN" => "显示仪表板",
-                _ => "Show Dashboard",
-            };
-            let force_test_text = match cfg.language.as_str() {
-                "zh-TW" => "強制測速",
-                "zh-CN" => "强制测速",
-                _ => "Force Test",
-            };
-            let toggle_pause_text = match cfg.language.as_str() {
-                "zh-TW" => "暫停 / 恢復",
-                "zh-CN" => "暂停 / 恢复",
-                _ => "Pause / Resume",
-            };
-            let autostart_text = match cfg.language.as_str() {
-                "zh-TW" => "開機自動啟動",
-                "zh-CN" => "开机自动启动",
-                _ => "Auto-start on Boot",
-            };
-            let quit_text = match cfg.language.as_str() {
-                "zh-TW" => "退出",
-                "zh-CN" => "退出",
-                _ => "Quit",
-            };
-
-            let show_i = MenuItem::with_id(app, "show", show_text, true, None::<&str>)?;
-            let force_test_i = MenuItem::with_id(app, "force_test", force_test_text, true, None::<&str>)?;
-            let toggle_pause_i = MenuItem::with_id(app, "toggle_pause", toggle_pause_text, true, None::<&str>)?;
-            let autostart_i = CheckMenuItem::with_id(app, "toggle_autostart", autostart_text, true, is_autostart_enabled, None::<&str>)?;
-            let separator = PredefinedMenuItem::separator(app)?;
-            let quit_i = MenuItem::with_id(app, "quit", quit_text, true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show_i, &force_test_i, &toggle_pause_i, &separator, &autostart_i, &separator, &quit_i])?;
-
             let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png")).unwrap_or_else(|_| app.default_window_icon().unwrap().clone());
-            let _tray = TrayIconBuilder::new()
+            let _tray = TrayIconBuilder::with_id("main")
                 .icon(tray_icon)
-                .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {
                         std::process::exit(0);
@@ -271,6 +267,8 @@ pub fn run() {
                     }
                 })
                 .build(app)?;
+            
+            let _ = update_tray_menu(app.handle(), &cfg.language);
             
             Ok(())
         })

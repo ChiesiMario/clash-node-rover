@@ -54,9 +54,10 @@ export function NodeHistoryChart({ nodeName }: NodeHistoryChartProps) {
           return {
             time: timeStr,
             fullDate: date.toLocaleString([], { hour12: false }),
-            score: entry.delay,
-            mean: entry.mean,
-            jitter: entry.jitter,
+            score: entry.delay === null ? 0 : entry.delay,
+            mean: entry.mean === null ? 0 : entry.mean,
+            jitter: entry.jitter === null ? 0 : entry.jitter,
+            isTimeout: entry.delay === null,
           };
         }).filter(Boolean); // Remove any null entries
 
@@ -138,6 +139,12 @@ export function NodeHistoryChart({ nodeName }: NodeHistoryChartProps) {
                     return payload[0].payload.fullDate;
                   }
                   return value;
+                }}
+                formatter={(value: any, name: any, props: any) => {
+                  if (props.payload && props.payload.isTimeout) {
+                    return ['Timeout', name];
+                  }
+                  return [value, name];
                 }}
               />
               <Legend wrapperStyle={{ fontSize: 12, paddingTop: '10px' }} />

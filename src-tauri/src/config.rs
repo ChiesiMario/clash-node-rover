@@ -25,6 +25,7 @@ pub struct Config {
     pub group_regions: std::collections::HashMap<String, Vec<String>>,
     pub has_completed_setup: bool,
     pub language: String,
+    pub manual_nodes: std::collections::HashMap<String, String>,
 }
 
 impl Default for Config {
@@ -55,6 +56,7 @@ impl Default for Config {
             group_regions: std::collections::HashMap::new(),
             has_completed_setup: false,
             language: "auto".to_string(),
+            manual_nodes: std::collections::HashMap::new(),
         }
     }
 }

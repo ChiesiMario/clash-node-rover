@@ -79,10 +79,11 @@ fn toggle_group_lock(app: tauri::AppHandle, state: tauri::State<AppState>, group
     let mut config = state.config.lock().unwrap().clone();
     if locked {
         if !config.locked_groups.contains(&group) {
-            config.locked_groups.push(group);
+            config.locked_groups.push(group.clone());
         }
     } else {
         config.locked_groups.retain(|g| g != &group);
+        config.manual_nodes.remove(&group);
     }
     *state.config.lock().unwrap() = config.clone();
     config::save_config(&app, &config)
@@ -108,11 +109,14 @@ async fn manual_switch(app: tauri::AppHandle, state: tauri::State<'_, AppState>,
     api.select_proxy(&group, &node).await?;
     db.insert_log("INFO", &format!("手動切換群組 [{}] 至節點: {}", group, node));
     
+    config.manual_nodes.insert(group.clone(), node.clone());
+    
     if !config.locked_groups.contains(&group) {
         config.locked_groups.push(group.clone());
-        *state.config.lock().unwrap() = config.clone();
-        let _ = config::save_config(&app, &config);
     }
+    
+    *state.config.lock().unwrap() = config.clone();
+    let _ = config::save_config(&app, &config);
     
     if let Ok(mut last_results) = state.last_results.lock() {
         for g in last_results.iter_mut() {

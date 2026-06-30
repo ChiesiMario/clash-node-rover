@@ -558,12 +558,24 @@ pub fn start_watchdog(app: AppHandle) {
                 
                 // Jitter 容忍度邏輯判斷
                 let is_locked = config.locked_groups.contains(group);
-                
+                let mut switched_to_node = None;
+
                 if is_locked {
                     db.insert_log("INFO", &format!("[群組: {}] 狀態為「已鎖定 (手動切換)」，略過自動切換邏輯。", group));
+                    if let Some(saved_node) = config.manual_nodes.get(group) {
+                        if current_node != saved_node {
+                            if final_results.iter().any(|r| &r.name == saved_node) {
+                                db.insert_log("WARN", &format!("[群組: {}] 當前節點 [{}] 與手動紀錄的節點 [{}] 不符，強制拉回！", group, get_display_name(current_node), get_display_name(saved_node)));
+                                if let Ok(_) = clash.select_proxy(group, saved_node).await {
+                                    switched_to_node = Some(saved_node.clone());
+                                }
+                            } else {
+                                db.insert_log("WARN", &format!("[群組: {}] 手動紀錄的節點 [{}] 不存在於目前節點清單，無法拉回。", group, saved_node));
+                            }
+                        }
+                    }
                 } else {
                     let mut switched = false;
-                    let mut switched_to_node = None;
                     for res in &final_results {
                         if let Some(delay) = res.delay {
                             // 檢查是否符合地區篩選
@@ -631,17 +643,16 @@ pub fn start_watchdog(app: AppHandle) {
                         }
                     }
 
-                    if let Some(target_node_name) = switched_to_node {
-                        for r in &mut final_results {
-                            r.is_active = r.name == target_node_name;
-                        }
-                    }
-
                     if !switched {
-                        // 如果跑到這裡且 current_node_delay 是 MAX，代表全部都死了或 HTTP 測試全滅
                         if current_node_delay == u64::MAX {
                             db.insert_log("WARN", &format!("[群組: {}] 警告：所有候補節點皆無法使用或未通過 HTTP 測試！", group));
                         }
+                    }
+                }
+
+                if let Some(target_node_name) = switched_to_node {
+                    for r in &mut final_results {
+                        r.is_active = r.name == target_node_name;
                     }
                 }
 

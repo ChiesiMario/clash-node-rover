@@ -144,10 +144,17 @@ pub fn run() {
             let args: Vec<String> = env::args().collect();
             let is_autostart = args.contains(&"--autostart".to_string());
             
+            let hi_res_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png")).unwrap_or_else(|_| app.default_window_icon().unwrap().clone());
+            
             if !is_autostart {
                 if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_icon(hi_res_icon.clone());
                     let _ = window.show();
                     let _ = window.set_focus();
+                }
+            } else {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_icon(hi_res_icon.clone());
                 }
             }
             
@@ -210,8 +217,9 @@ pub fn run() {
             let quit_i = MenuItem::with_id(app, "quit", quit_text, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &force_test_i, &toggle_pause_i, &separator, &autostart_i, &separator, &quit_i])?;
 
+            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png")).unwrap_or_else(|_| app.default_window_icon().unwrap().clone());
             let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
+                .icon(tray_icon)
                 .menu(&menu)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "quit" => {

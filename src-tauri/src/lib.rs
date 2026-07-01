@@ -2,6 +2,7 @@ mod config;
 mod db;
 mod clash;
 mod watchdog;
+mod probe;
 
 use tauri::{
     AppHandle, Manager, Emitter,
@@ -292,7 +293,8 @@ pub fn run() {
             get_latest_results,
             get_status,
             toggle_pause,
-            get_node_history
+            get_node_history,
+            probe::probe_rule
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

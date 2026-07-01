@@ -2,8 +2,10 @@
   "nav": {
     "dashboard": "仪表板",
     "node_ranking": "节点排行",
+    "probe": "分流探测",
     "settings": "设置",
-    "console": "终端机"
+    "console": "终端机",
+    "about": "关于"
   },
   "dashboard": {
     "system_status": "系统状态",
@@ -139,5 +141,21 @@
     "all_set": "一切就绪！",
     "all_set_desc": "Clash Node Rover 现在已准备好优化您的网络体验。您随时可以在“设置”选项卡调整进阶规则、延迟容忍度和 HTTP 验证。",
     "enter_dashboard": "进入仪表板"
+  },
+  "probe": {
+    "title": "分流规则探测",
+    "subtitle": "输入域名以探测其触发的代理规则及最终节点链路。",
+    "domain_placeholder": "例如: youtube.com",
+    "probe_btn": "探测",
+    "probing": "探测中...",
+    "domain": "域名",
+    "rule": "规则",
+    "proxy_server": "代理服务器",
+    "proxy_chain": "代理链路",
+    "error_empty": "请输入域名",
+    "no_result": "暂无探测结果",
+    "use_proxy": "使用 HTTP 代理",
+    "tun_mode_hint": "默认不使用代理。请确保在 Clash 中已开启 Tun Mode 以拦截请求。",
+    "proxy_url_placeholder": "例如: http://127.0.0.1:7890"
   }
 }

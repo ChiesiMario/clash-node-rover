@@ -2,6 +2,7 @@
   "nav": {
     "dashboard": "儀表板",
     "node_ranking": "節點排行",
+    "probe": "分流探測",
     "settings": "設定",
     "console": "終端機",
     "about": "關於"
@@ -147,5 +148,21 @@
     "version": "版本",
     "author": "作者",
     "github": "GitHub 專案"
+  },
+  "probe": {
+    "title": "分流規則探測",
+    "subtitle": "輸入網域以探測其觸發的代理規則及最終節點鏈路。",
+    "domain_placeholder": "例如: youtube.com",
+    "probe_btn": "探測",
+    "probing": "探測中...",
+    "domain": "網域",
+    "rule": "規則",
+    "proxy_server": "代理伺服器",
+    "proxy_chain": "代理鏈路",
+    "error_empty": "請輸入網域",
+    "no_result": "尚無探測結果",
+    "use_proxy": "使用 HTTP 代理",
+    "tun_mode_hint": "預設不使用代理。請確保在 Clash 中已開啟 Tun Mode 以攔截請求。",
+    "proxy_url_placeholder": "例如: http://127.0.0.1:7890"
   }
 }

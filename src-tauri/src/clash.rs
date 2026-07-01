@@ -43,6 +43,28 @@ pub struct DelayResponse {
     pub delay: u64,
 }
 
+#[derive(Deserialize, Debug, Clone)]
+pub struct ConnectionMetadata {
+    pub host: String,
+    #[serde(rename = "destinationIP")]
+    pub destination_ip: String,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ConnectionInfo {
+    pub id: String,
+    pub metadata: ConnectionMetadata,
+    pub rule: String,
+    #[serde(rename = "rulePayload")]
+    pub rule_payload: String,
+    pub chains: Vec<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct ConnectionsResponse {
+    pub connections: Vec<ConnectionInfo>,
+}
+
 impl ClashApi {
     pub fn new(base_url: &str, secret: &str) -> Self {
         let mut headers = header::HeaderMap::new();
@@ -132,6 +154,17 @@ impl ClashApi {
             Ok(data.delay)
         } else {
             Err(format!("Ping failed with status: {}", resp.status()))
+        }
+    }
+
+    pub async fn get_connections(&self) -> Result<ConnectionsResponse, String> {
+        let url = format!("{}/connections", self.base_url);
+        let resp = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        if resp.status().is_success() {
+            let data: ConnectionsResponse = resp.json().await.map_err(|e| e.to_string())?;
+            Ok(data)
+        } else {
+            Err(format!("Failed to get connections: {}", resp.status()))
         }
     }
 }

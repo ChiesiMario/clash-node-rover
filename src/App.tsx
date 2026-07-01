@@ -1,9 +1,10 @@
 
 import * as Tabs from "@radix-ui/react-tabs";
-import { Activity, Settings2, TerminalSquare, Info } from "lucide-react";
+import { Activity, Settings2, TerminalSquare, Info, Search } from "lucide-react";
 import { Dashboard, AppStatus } from "./components/Dashboard";
 import { Settings } from "./components/Settings";
 import { Console } from "./components/Console";
+import { RuleProbe } from "./components/RuleProbe";
 import { SetupWizard } from "./components/SetupWizard";
 import { About } from "./components/About";
 import "./App.css";
@@ -73,6 +74,13 @@ function App() {
             <span className="font-medium text-sm">{t('nav.dashboard', 'Dashboard')}</span>
           </Tabs.Trigger>
           <Tabs.Trigger
+            value="probe"
+            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+          >
+            <Search className="w-4 h-4" />
+            <span className="font-medium text-sm">{t('nav.probe', 'Routing Probe')}</span>
+          </Tabs.Trigger>
+          <Tabs.Trigger
             value="settings"
             className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
           >
@@ -102,6 +110,13 @@ function App() {
             forceMount
           >
             <Dashboard status={status} onNavigate={setActiveTab} />
+          </Tabs.Content>
+          <Tabs.Content 
+            value="probe" 
+            className="h-full focus:outline-none data-[state=inactive]:hidden animate-in fade-in duration-1000" 
+            forceMount
+          >
+            <RuleProbe />
           </Tabs.Content>
           <Tabs.Content 
             value="settings" 

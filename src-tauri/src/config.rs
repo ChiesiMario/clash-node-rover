@@ -26,6 +26,8 @@ pub struct Config {
     pub has_completed_setup: bool,
     pub language: String,
     pub manual_nodes: std::collections::HashMap<String, String>,
+    pub probe_use_proxy: bool,
+    pub probe_proxy_url: String,
 }
 
 impl Default for Config {
@@ -57,6 +59,8 @@ impl Default for Config {
             has_completed_setup: false,
             language: "auto".to_string(),
             manual_nodes: std::collections::HashMap::new(),
+            probe_use_proxy: false,
+            probe_proxy_url: "http://127.0.0.1:7890".into(),
         }
     }
 }

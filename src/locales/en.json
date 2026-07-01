@@ -2,6 +2,7 @@
   "nav": {
     "dashboard": "Dashboard",
     "node_ranking": "Node Ranking",
+    "probe": "Routing Probe",
     "settings": "Settings",
     "console": "Console",
     "about": "About"
@@ -143,9 +144,25 @@
   },
   "about": {
     "title": "About Clash Node Rover",
-    "description": "Lightweight and smart node management and testing tool",
+    "description": "Lightweight and smart node management & testing tool",
     "version": "Version",
     "author": "Author",
     "github": "GitHub Repository"
+  },
+  "probe": {
+    "title": "Routing Rule Probe",
+    "subtitle": "Enter a domain to probe its triggered routing rule and final proxy chain.",
+    "domain_placeholder": "e.g. youtube.com",
+    "probe_btn": "Probe",
+    "probing": "Probing...",
+    "domain": "Domain",
+    "rule": "Rule",
+    "proxy_server": "Proxy Server",
+    "proxy_chain": "Proxy Chain",
+    "error_empty": "Please enter a domain",
+    "no_result": "No probe results yet",
+    "use_proxy": "Use HTTP Proxy",
+    "tun_mode_hint": "Default is no proxy. Ensure Tun Mode is enabled in Clash to intercept requests.",
+    "proxy_url_placeholder": "e.g. http://127.0.0.1:7890"
   }
 }

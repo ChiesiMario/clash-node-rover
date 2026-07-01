@@ -1,6 +1,6 @@
 
 import * as Tabs from "@radix-ui/react-tabs";
-import { Activity, Settings2, TerminalSquare, Info, Search } from "lucide-react";
+import { Activity, Settings2, TerminalSquare, Info, Search, Play, Pause } from "lucide-react";
 import { Dashboard, AppStatus } from "./components/Dashboard";
 import { Settings } from "./components/Settings";
 import { Console } from "./components/Console";
@@ -65,42 +65,60 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground relative">
       <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
-        <Tabs.List className="flex border-b border-border bg-muted/30 px-4 py-2 gap-1">
-          <Tabs.Trigger
-            value="dashboard"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-          >
-            <Activity className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('nav.dashboard', 'Dashboard')}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger
-            value="probe"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-          >
-            <Search className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('nav.probe', 'Routing Probe')}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger
-            value="settings"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-          >
-            <Settings2 className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('nav.settings', 'Settings')}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger
-            value="console"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-          >
-            <TerminalSquare className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('nav.console', 'Console')}</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger
-            value="about"
-            className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
-          >
-            <Info className="w-4 h-4" />
-            <span className="font-medium text-sm">{t('nav.about', 'About')}</span>
-          </Tabs.Trigger>
+        <Tabs.List className="flex border-b border-border bg-muted/30 px-4 py-2 items-center justify-between">
+          <div className="flex gap-1">
+            <Tabs.Trigger
+              value="dashboard"
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+            >
+              <Activity className="w-4 h-4" />
+              <span className="font-medium text-sm">{t('nav.dashboard', 'Dashboard')}</span>
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="probe"
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+            >
+              <Search className="w-4 h-4" />
+              <span className="font-medium text-sm">{t('nav.probe', 'Routing Probe')}</span>
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="settings"
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+            >
+              <Settings2 className="w-4 h-4" />
+              <span className="font-medium text-sm">{t('nav.settings', 'Settings')}</span>
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="console"
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+            >
+              <TerminalSquare className="w-4 h-4" />
+              <span className="font-medium text-sm">{t('nav.console', 'Console')}</span>
+            </Tabs.Trigger>
+            <Tabs.Trigger
+              value="about"
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-all data-[state=active]:bg-primary/10 data-[state=active]:text-primary"
+            >
+              <Info className="w-4 h-4" />
+              <span className="font-medium text-sm">{t('nav.about', 'About')}</span>
+            </Tabs.Trigger>
+          </div>
+          
+          <div>
+            {status && (
+              <button
+                onClick={() => invoke("toggle_pause")}
+                className={`p-2 rounded-full border-none outline-none focus:outline-none transition-all flex items-center justify-center ${
+                  status.is_paused 
+                    ? "text-rose-500 hover:bg-rose-500/10" 
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`}
+                title={status.is_paused ? t('dashboard.resume_engine', 'Resume Engine') : t('dashboard.pause_engine', 'Pause Engine')}
+              >
+                {status.is_paused ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}
+              </button>
+            )}
+          </div>
         </Tabs.List>
 
         <div className="flex-1 overflow-auto">

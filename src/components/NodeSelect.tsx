@@ -68,7 +68,7 @@ export function CustomNodeSelect({
     <div className="relative w-full" ref={dropdownRef}>
       <div 
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center justify-between w-full bg-background border border-border rounded-md px-3 py-2 text-sm cursor-pointer hover:border-amber-500/50 transition-colors shadow-sm"
+        className="group flex items-center justify-between w-full bg-background border border-border rounded-md px-3 py-2 text-sm cursor-pointer hover:border-amber-500/50 transition-colors shadow-sm"
       >
         <div className="flex items-center gap-2 flex-1 min-w-0 pr-2">
            {selectedNode?.provider && (
@@ -76,7 +76,7 @@ export function CustomNodeSelect({
                {selectedNode.provider}
              </span>
            )}
-           <span className="truncate font-medium text-foreground">{selectedNode ? selectedNode.name : t('ranking.select_node', 'Select node...')}</span>
+           <span className="truncate font-medium text-foreground emoji-monochrome">{selectedNode ? selectedNode.name : t('ranking.select_node', 'Select node...')}</span>
         </div>
         <ChevronDown className="w-4 h-4 text-muted-foreground shrink-0" />
       </div>
@@ -87,7 +87,7 @@ export function CustomNodeSelect({
             <div 
               key={node.name}
               onClick={() => { onChange(node.name); setIsOpen(false); }}
-              className={`flex items-center gap-2 px-2 py-2 cursor-pointer rounded-sm text-sm transition-colors hover:bg-muted ${node.name === value ? "bg-muted/50" : ""}`}
+              className={`group flex items-center gap-2 px-2 py-2 cursor-pointer rounded-sm text-sm transition-colors hover:bg-muted ${node.name === value ? "bg-muted/50" : ""}`}
             >
               <div className="flex items-center gap-1.5 shrink-0">
                  {node.delay === null ? (
@@ -108,7 +108,7 @@ export function CustomNodeSelect({
                     {node.provider}
                   </span>
                 )}
-                <span className="truncate text-foreground/90">{node.name}</span>
+                <span className="truncate text-foreground/90 emoji-monochrome">{node.name}</span>
               </div>
             </div>
           ))}

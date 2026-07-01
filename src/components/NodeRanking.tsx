@@ -260,10 +260,10 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
             const hasNodes = group.nodes.length > 0;
 
             return (
-              <div key={group.group_name} className="flex flex-col justify-between gap-3 bg-muted/30 p-4 rounded-xl border border-border transition-colors hover:bg-muted/50">
+              <div key={group.group_name} className="group flex flex-col justify-between gap-3 bg-muted/30 p-4 rounded-xl border border-border transition-colors hover:bg-muted/50">
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2">
-                    <h3 className="font-semibold truncate">{group.group_name}</h3>
+                    <h3 className="font-semibold truncate emoji-monochrome">{group.group_name}</h3>
                   </div>
                   <div className="flex flex-col gap-1.5 flex-1 min-w-0">
                     {/* Row 1: Delay and TimeAgo */}
@@ -287,7 +287,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
 
                     {/* Row 2: Node Name */}
                     <div className="flex items-center w-full min-w-0">
-                      <span className={`font-medium truncate ${!hasNodes ? "text-muted-foreground animate-pulse" : "text-foreground"}`}>
+                      <span className={`font-medium truncate emoji-monochrome ${!hasNodes ? "text-muted-foreground animate-pulse" : "text-foreground"}`}>
                         {!hasNodes ? t('ranking.syncing_nodes', 'Syncing nodes...') : activeNode ? activeNode.name : t('ranking.waiting', 'Waiting...')}
                       </span>
                     </div>
@@ -303,7 +303,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-3 pt-1">
+                <div className="flex flex-col gap-3 pt-3 border-t border-border/50 mt-1">
                   {/* Mode Toggle Buttons */}
                   <div className="flex bg-background/50 p-1 rounded-lg border border-border">
                     <button
@@ -320,7 +320,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                       onClick={() => !group.is_locked && handleToggleLock(group.group_name, false)}
                       className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
                         group.is_locked 
-                          ? "bg-background shadow-sm text-amber-600 dark:text-amber-500" 
+                          ? "bg-background shadow-sm text-foreground" 
                           : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                       }`}
                     >

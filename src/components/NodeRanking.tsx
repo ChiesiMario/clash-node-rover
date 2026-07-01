@@ -6,6 +6,25 @@ import { useTranslation } from "react-i18next";
 import { NodeHistoryChart } from "./NodeHistoryChart";
 import { CustomNodeSelect, getColorClass, getJitterColorClass, NodeResult } from "./NodeSelect";
 
+function TimeAgo({ timestamp, t }: { timestamp: number; t: any }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    // Update every second to show real-time seconds
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const diffSeconds = Math.floor((now - timestamp) / 1000);
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  
+  if (diffMinutes < 1) {
+    return <span className="text-[10px] text-muted-foreground/70 text-center block">{t('ranking.seconds_ago', '{{count}} 秒前', { count: Math.max(0, diffSeconds) })}</span>;
+  }
+  
+  return <span className="text-[10px] text-muted-foreground/70 text-center block">{t('ranking.minutes_ago', '{{count}} 分鐘前', { count: diffMinutes })}</span>;
+}
+
 interface GroupResult {
   group_name: string;
   nodes: NodeResult[];
@@ -28,6 +47,40 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
   const [groups, setGroups] = useState<GroupResult[]>([]);
   const [selectedNodes, setSelectedNodes] = useState<Record<string, string>>({});
   const [expandedNode, setExpandedNode] = useState<string | null>(null);
+  const [lastSwitchTimes, setLastSwitchTimes] = useState<Record<string, number>>({});
+  const [currentActiveNodes, setCurrentActiveNodes] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    // Detect active node changes
+    setGroups((prevGroups) => {
+      // We do this logic outside of setGroups usually, but since groups is state, we can use an effect that depends on groups.
+      return prevGroups;
+    });
+  }, []);
+
+  useEffect(() => {
+    let changed = false;
+    const newActiveNodes = { ...currentActiveNodes };
+    const newSwitchTimes = { ...lastSwitchTimes };
+    const now = Date.now();
+
+    groups.forEach(g => {
+      const active = g.nodes.find(n => n.is_active);
+      if (active) {
+        const prev = newActiveNodes[g.group_name];
+        if (prev !== active.name) {
+          newActiveNodes[g.group_name] = active.name;
+          newSwitchTimes[g.group_name] = now;
+          changed = true;
+        }
+      }
+    });
+
+    if (changed) {
+      setCurrentActiveNodes(newActiveNodes);
+      setLastSwitchTimes(newSwitchTimes);
+    }
+  }, [groups]);
 
   useEffect(() => {
     // Fetch initial state
@@ -208,12 +261,13 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
 
             return (
               <div key={group.group_name} className="flex flex-col justify-between gap-3 bg-muted/30 p-4 rounded-xl border border-border transition-colors hover:bg-muted/50">
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2">
                     <h3 className="font-semibold truncate">{group.group_name}</h3>
                   </div>
-                  <div className="flex flex-col gap-1 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 w-full">
+                  <div className="flex flex-col gap-1.5 flex-1 min-w-0">
+                    {/* Row 1: Delay and TimeAgo */}
+                    <div className="flex items-center justify-between w-full">
                       <div className="shrink-0 flex items-center gap-1">
                         {!hasNodes || activeNode?.delay === null || activeNode?.delay === undefined ? (
                           <Zap className="w-4 h-4 text-muted-foreground/50" />
@@ -224,14 +278,23 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                           </>
                         )}
                       </div>
-                      <div className="flex flex-col gap-1 flex-1 min-w-0">
-                        <span className={`font-medium truncate ${!hasNodes ? "text-muted-foreground animate-pulse" : "text-foreground"}`}>
-                          {!hasNodes ? t('ranking.syncing_nodes', 'Syncing nodes...') : activeNode ? activeNode.name : t('ranking.waiting', 'Waiting...')}
-                        </span>
-                      </div>
+                      {lastSwitchTimes[group.group_name] && (
+                        <div className="shrink-0">
+                          <TimeAgo timestamp={lastSwitchTimes[group.group_name]} t={t} />
+                        </div>
+                      )}
                     </div>
+
+                    {/* Row 2: Node Name */}
+                    <div className="flex items-center w-full min-w-0">
+                      <span className={`font-medium truncate ${!hasNodes ? "text-muted-foreground animate-pulse" : "text-foreground"}`}>
+                        {!hasNodes ? t('ranking.syncing_nodes', 'Syncing nodes...') : activeNode ? activeNode.name : t('ranking.waiting', 'Waiting...')}
+                      </span>
+                    </div>
+
+                    {/* Row 3: Provider */}
                     {activeNode?.provider && (
-                      <div className="flex items-center">
+                      <div className="flex items-center mt-0.5">
                         <span className="text-[10px] font-medium bg-muted text-muted-foreground px-1.5 py-0.5 rounded-md border border-border/50 truncate max-w-full">
                           {activeNode.provider}
                         </span>
@@ -240,7 +303,7 @@ export function NodeRanking({ isTesting, targetGroups, onNavigate }: NodeRanking
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-3 pt-3 mt-1 border-t border-border/50">
+                <div className="flex flex-col gap-3 pt-1">
                   {/* Mode Toggle Buttons */}
                   <div className="flex bg-background/50 p-1 rounded-lg border border-border">
                     <button

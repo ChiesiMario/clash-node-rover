@@ -65,7 +65,7 @@ function App() {
   return (
     <div className="flex flex-col h-screen bg-background text-foreground selection:bg-primary selection:text-primary-foreground relative">
       <Tabs.Root value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
-        <Tabs.List className="flex border-b border-border bg-muted/30 px-4 py-2 items-center justify-between">
+        <Tabs.List className="flex border-b border-border bg-transparent px-4 py-2 items-center justify-between">
           <div className="flex gap-1">
             <Tabs.Trigger
               value="dashboard"
